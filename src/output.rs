@@ -2,6 +2,9 @@ use std::io::Write;
 
 use crate::models::LogEntry;
 
+/// # Errors
+///
+/// Returns an error if writing to the writer fails.
 pub fn write_csv<W: Write>(mut writer: W, entries: &[LogEntry]) -> anyhow::Result<()> {
     writeln!(
         writer,
@@ -28,11 +31,17 @@ pub fn write_csv<W: Write>(mut writer: W, entries: &[LogEntry]) -> anyhow::Resul
     Ok(())
 }
 
+/// # Errors
+///
+/// Returns an error if serialization or writing fails.
 pub fn write_json<W: Write>(writer: W, entries: &[LogEntry]) -> anyhow::Result<()> {
     serde_json::to_writer(writer, entries)?;
     Ok(())
 }
 
+/// # Errors
+///
+/// Returns an error if file creation or writing fails.
 pub fn write_output(entries: &[LogEntry], path: &str) -> anyhow::Result<()> {
     if path == "-" {
         write_json(std::io::stdout().lock(), entries)?;
@@ -40,7 +49,10 @@ pub fn write_output(entries: &[LogEntry], path: &str) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    if path.ends_with(".csv") {
+    if std::path::Path::new(path)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"))
+    {
         let file = std::fs::File::create(path)?;
         write_csv(file, entries)?;
     } else {

@@ -11,9 +11,9 @@ fn make_args(
     CliArgs {
         log_file: log_file.to_string(),
         csv,
-        output: output.map(|s| s.to_string()),
-        from: from.map(|s| s.to_string()),
-        to: to.map(|s| s.to_string()),
+        output: output.map(std::string::ToString::to_string),
+        from: from.map(std::string::ToString::to_string),
+        to: to.map(std::string::ToString::to_string),
         verbose,
     }
 }

@@ -30,11 +30,11 @@ fn main() -> anyhow::Result<()> {
     let parse_result =
         match parser::parse_ufw_log_range(&config.log_file, config.from_date, config.to_date) {
             Err(UfwError::PermissionDenied { path, hint }) => {
-                eprintln!("\nPermiso denegado al leer {}.\nSugerencia: {}", path, hint);
+                eprintln!("\nPermiso denegado al leer {path}.\nSugerencia: {hint}");
                 std::process::exit(1);
             }
             Err(UfwError::LogNotFound(path)) => {
-                eprintln!("\nNo se encontró el archivo de log: {}", path);
+                eprintln!("\nNo se encontró el archivo de log: {path}");
                 std::process::exit(1);
             }
             result => result?,
@@ -42,7 +42,7 @@ fn main() -> anyhow::Result<()> {
 
     let entry_count = parse_result.all_entries.len();
     let day_count = parse_result.reports.len();
-    eprintln!("{} entries, {} days", entry_count, day_count);
+    eprintln!("{entry_count} entries, {day_count} days");
 
     if let Some(ref output_path) = config.output {
         output::write_output(&parse_result.all_entries, output_path)?;

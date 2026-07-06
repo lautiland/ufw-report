@@ -60,6 +60,7 @@ pub struct AggregatedData {
     pub protocols: HashMap<String, u64>,
 }
 
+#[must_use]
 pub fn build_aggregated(reports: Vec<DailyReport>, all_entries: &[LogEntry]) -> AggregatedData {
     let total_blocked = reports.iter().map(|d| d.total_blocked).sum();
 
