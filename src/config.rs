@@ -37,6 +37,9 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// # Errors
+    ///
+    /// Returns an error if the date parsing fails or `--from` is after `--to`.
     pub fn from_cli(args: &CliArgs) -> anyhow::Result<Self> {
         let today = chrono::Local::now().date_naive();
 
@@ -52,9 +55,7 @@ impl AppConfig {
 
         anyhow::ensure!(
             from_date <= to_date,
-            "--from ({}) debe ser anterior o igual a --to ({})",
-            from_date,
-            to_date,
+            "--from ({from_date}) debe ser anterior o igual a --to ({to_date})",
         );
 
         Ok(AppConfig {

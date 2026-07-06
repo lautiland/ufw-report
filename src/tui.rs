@@ -23,6 +23,10 @@ use crate::models::{AggregatedData, DailyReport, Direction as UfwDirection, LogE
 
 const TAB_TITLES: &[&str] = &[" Overview ", " Daily ", " Hourly ", " Raw "];
 
+fn to_u16_clamped(v: usize) -> u16 {
+    u16::try_from(v).unwrap_or(u16::MAX)
+}
+
 pub struct App {
     pub data: AggregatedData,
     pub entries: Vec<LogEntry>,
@@ -36,6 +40,7 @@ pub struct App {
 }
 
 impl App {
+    #[must_use]
     pub fn new(data: AggregatedData, entries: Vec<LogEntry>) -> Self {
         Self {
             data,
@@ -84,6 +89,9 @@ fn restore_terminal() {
     let _ = io::stdout().execute(LeaveAlternateScreen);
 }
 
+/// # Errors
+///
+/// Returns an error if the terminal cannot be initialized or events fail to read.
 pub fn run_tui(data: AggregatedData, entries: Vec<LogEntry>) -> anyhow::Result<()> {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic| {
@@ -119,210 +127,91 @@ fn run_tui_inner(data: AggregatedData, entries: Vec<LogEntry>) -> anyhow::Result
     Ok(())
 }
 
-fn handle_events(app: &mut App) -> io::Result<()> {
-    if let Event::Key(key) = event::read()? {
-        if key.kind != KeyEventKind::Press {
-            return Ok(());
-        }
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => app.running = false,
-            KeyCode::Char('1') => app.current_tab = 0,
-            KeyCode::Char('2') => app.current_tab = 1,
-            KeyCode::Char('3') => app.current_tab = 2,
-            KeyCode::Char('4') => app.current_tab = 3,
-            KeyCode::Tab => {
-                app.current_tab = (app.current_tab + 1) % 4;
-            }
-            KeyCode::BackTab => {
-                app.current_tab = (app.current_tab + 3) % 4;
-            }
-            KeyCode::Left => match app.current_tab {
-                1 if !app.data.days.is_empty() => {
-                    let last = app.data.days.len().saturating_sub(1);
-                    let idx = app.selected_day_index.unwrap_or_else(|| last);
-                    if let Some(prev) = App::prev_day_with_data(&app.data.days, idx) {
-                        app.selected_day_index = Some(prev);
-                    }
-                }
-                2 if !app.data.days.is_empty() => {
-                    let last = app.data.days.len().saturating_sub(1);
-                    let idx = app.selected_day_index.unwrap_or_else(|| last).min(last);
-                    let day = &app.data.days[idx];
-                    let default_h = App::last_hour_for_day(day).unwrap_or(0);
-                    let h = app.selected_hour.unwrap_or(default_h);
-                    if let Some(prev_h) = App::prev_hour_with_data(day, h) {
-                        app.selected_hour = Some(prev_h);
-                    } else if let Some(prev) = App::prev_day_with_data(&app.data.days, idx) {
-                        app.selected_day_index = Some(prev);
-                        app.selected_hour = App::last_hour_for_day(&app.data.days[prev]);
-                    }
-                    app.hourly_scroll = 0;
-                }
-                _ => {}
-            },
-            KeyCode::Right => match app.current_tab {
-                1 if !app.data.days.is_empty() => {
-                    let last = app.data.days.len().saturating_sub(1);
-                    let idx = app.selected_day_index.unwrap_or_else(|| last);
-                    if let Some(next) = App::next_day_with_data(&app.data.days, idx) {
-                        app.selected_day_index = Some(next);
-                    }
-                }
-                2 if !app.data.days.is_empty() => {
-                    let n = app.data.days.len();
-                    let last = n.saturating_sub(1);
-                    let idx = app.selected_day_index.unwrap_or_else(|| last).min(last);
-                    let day = &app.data.days[idx];
-                    let default_h = App::last_hour_for_day(day).unwrap_or(0);
-                    let h = app.selected_hour.unwrap_or(default_h);
-                    if let Some(next_h) = App::next_hour_with_data(day, h) {
-                        app.selected_hour = Some(next_h);
-                    } else if let Some(next) = App::next_day_with_data(&app.data.days, idx) {
-                        app.selected_day_index = Some(next);
-                        let next_day = &app.data.days[next];
-                        app.selected_hour = next_day.hourly.iter()
-                            .filter(|hb| hb.count > 0)
-                            .min_by_key(|hb| hb.hour)
-                            .map(|hb| hb.hour);
-                    }
-                    app.hourly_scroll = 0;
-                }
-                _ => {}
-            },
-            KeyCode::Up => {
-                let step = if key.modifiers.contains(KeyModifiers::SHIFT) { 3 } else { 1 };
-                match app.current_tab {
-                    0 => app.scroll = app.scroll.saturating_sub(step),
-                    2 => app.hourly_scroll = app.hourly_scroll.saturating_sub(step),
-                    3 => app.raw_scroll = app.raw_scroll.saturating_sub(step),
-                    _ => {}
-                }
-            }
-            KeyCode::Down => {
-                let step = if key.modifiers.contains(KeyModifiers::SHIFT) { 3 } else { 1 };
-                match app.current_tab {
-                    0 => app.scroll = app.scroll.saturating_add(step),
-                    2 => app.hourly_scroll = app.hourly_scroll.saturating_add(step),
-                    3 => app.raw_scroll = app.raw_scroll.saturating_add(step),
-                    _ => {}
-                }
-            }
-            KeyCode::PageUp => {
-                let step = if key.modifiers.contains(KeyModifiers::SHIFT) { 30 } else { 10 };
-                match app.current_tab {
-                    0 => app.scroll = app.scroll.saturating_sub(step),
-                    2 => app.hourly_scroll = app.hourly_scroll.saturating_sub(step),
-                    3 => app.raw_scroll = app.raw_scroll.saturating_sub(step),
-                    _ => {}
-                }
-            }
-            KeyCode::PageDown => {
-                let step = if key.modifiers.contains(KeyModifiers::SHIFT) { 30 } else { 10 };
-                match app.current_tab {
-                    0 => app.scroll = app.scroll.saturating_add(step),
-                    2 => app.hourly_scroll = app.hourly_scroll.saturating_add(step),
-                    3 => app.raw_scroll = app.raw_scroll.saturating_add(step),
-                    _ => {}
-                }
-            }
-            KeyCode::Enter => {
-                if app.current_tab == 1 && !app.data.days.is_empty() {
-                    let last = app.data.days.len().saturating_sub(1);
-                    let idx = app.selected_day_index.unwrap_or_else(|| last).min(last);
-                    app.selected_day_index = Some(idx);
-                    app.selected_hour = App::last_hour_for_day(&app.data.days[idx]);
-                    app.hourly_scroll = 0;
-                    app.current_tab = 2;
-                }
-            }
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
-fn ui(frame: &mut Frame, app: &mut App) {
-    let chunks = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Min(0),
-        Constraint::Length(1),
-    ])
-    .areas::<3>(frame.area());
-    let [header_area, content_area, status_area] = chunks;
-
-    render_header(frame, header_area, app);
+fn handle_left_key(app: &mut App) {
     match app.current_tab {
-        0 => render_overview(frame, content_area, app),
-        1 => render_daily(frame, content_area, app),
-        2 => render_hourly(frame, content_area, app),
-        3 => render_raw(frame, content_area, app),
+        1 if !app.data.days.is_empty() => {
+            let last = app.data.days.len().saturating_sub(1);
+            let idx = app.selected_day_index.unwrap_or(last);
+            if let Some(prev) = App::prev_day_with_data(&app.data.days, idx) {
+                app.selected_day_index = Some(prev);
+            }
+        }
+        2 if !app.data.days.is_empty() => {
+            let last = app.data.days.len().saturating_sub(1);
+            let idx = app.selected_day_index.unwrap_or(last).min(last);
+            let day = &app.data.days[idx];
+            let default_h = App::last_hour_for_day(day).unwrap_or(0);
+            let h = app.selected_hour.unwrap_or(default_h);
+            if let Some(prev_h) = App::prev_hour_with_data(day, h) {
+                app.selected_hour = Some(prev_h);
+            } else if let Some(prev) = App::prev_day_with_data(&app.data.days, idx) {
+                app.selected_day_index = Some(prev);
+                app.selected_hour = App::last_hour_for_day(&app.data.days[prev]);
+            }
+            app.hourly_scroll = 0;
+        }
         _ => {}
     }
-    render_status(frame, status_area, app);
 }
 
-fn render_header(frame: &mut Frame, area: Rect, app: &App) {
-    let title = Span::styled(
-        " ufw-report ",
-        Style::default()
-            .fg(Color::White)
-            .bg(Color::Blue)
-            .add_modifier(Modifier::BOLD),
-    );
-
-    let mut tab_spans = vec![title];
-    for (i, tab) in TAB_TITLES.iter().enumerate() {
-        let style = if i == app.current_tab {
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::LightYellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White).bg(Color::DarkGray)
-        };
-        let prefix = if i > 0 { " " } else { "" };
-        tab_spans.push(Span::styled(format!("{}{}", prefix, tab), style));
+fn handle_right_key(app: &mut App) {
+    match app.current_tab {
+        1 if !app.data.days.is_empty() => {
+            let last = app.data.days.len().saturating_sub(1);
+            let idx = app.selected_day_index.unwrap_or(last);
+            if let Some(next) = App::next_day_with_data(&app.data.days, idx) {
+                app.selected_day_index = Some(next);
+            }
+        }
+        2 if !app.data.days.is_empty() => {
+            let n = app.data.days.len();
+            let last = n.saturating_sub(1);
+            let idx = app.selected_day_index.unwrap_or(last).min(last);
+            let day = &app.data.days[idx];
+            let default_h = App::last_hour_for_day(day).unwrap_or(0);
+            let h = app.selected_hour.unwrap_or(default_h);
+            if let Some(next_h) = App::next_hour_with_data(day, h) {
+                app.selected_hour = Some(next_h);
+            } else if let Some(next) = App::next_day_with_data(&app.data.days, idx) {
+                app.selected_day_index = Some(next);
+                let next_day = &app.data.days[next];
+                app.selected_hour = next_day
+                    .hourly
+                    .iter()
+                    .filter(|hb| hb.count > 0)
+                    .min_by_key(|hb| hb.hour)
+                    .map(|hb| hb.hour);
+            }
+            app.hourly_scroll = 0;
+        }
+        _ => {}
     }
-
-    let header = Paragraph::new(Line::from(tab_spans));
-    frame.render_widget(header, area);
 }
 
-fn render_status(frame: &mut Frame, area: Rect, _app: &App) {
-    let text = Line::from(vec![
-        Span::styled("[Tab]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Tab "),
-        Span::styled("[←→]", Style::default().fg(Color::Cyan)),
-        Span::raw("Day/Hour "),
-        Span::styled("[↑↓]", Style::default().fg(Color::Cyan)),
-        Span::raw("Scroll "),
-        Span::styled("[Enter]", Style::default().fg(Color::Cyan)),
-        Span::raw("Hourly "),
-        Span::styled("[q]", Style::default().fg(Color::Cyan)),
-        Span::raw("Quit"),
-    ]);
-    let status = Paragraph::new(text).style(Style::default().bg(Color::DarkGray).fg(Color::White));
-    frame.render_widget(status, area);
+fn handle_scroll(app: &mut App, step: usize, direction: i8) {
+    let apply = |current: usize, delta: i8| -> usize {
+        if delta > 0 {
+            current.saturating_add(step)
+        } else {
+            current.saturating_sub(step)
+        }
+    };
+    match app.current_tab {
+        0 => app.scroll = apply(app.scroll, direction),
+        2 => app.hourly_scroll = apply(app.hourly_scroll, direction),
+        3 => app.raw_scroll = apply(app.raw_scroll, direction),
+        _ => {}
+    }
 }
 
-fn render_overview(frame: &mut Frame, area: Rect, app: &App) {
-    let data = &app.data;
-
-    let chunks = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Min(0),
-    ])
-    .areas::<3>(area);
-    let [cards_area, proto_area, tables_area] = chunks;
-
+fn render_summary_cards(frame: &mut Frame, area: Rect, data: &AggregatedData) {
     let card_layout = Layout::horizontal([
         Constraint::Percentage(25),
         Constraint::Percentage(25),
         Constraint::Percentage(25),
         Constraint::Percentage(25),
     ]);
-    let [total_area, in_area, out_area, ip_area] = card_layout.areas(cards_area);
+    let [total_area, incoming_area, outgoing_area, uniq_ip_area] = card_layout.areas(area);
 
     let total_card = Paragraph::new(Line::from(vec![
         Span::raw("Total Blocked"),
@@ -348,7 +237,7 @@ fn render_overview(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ]))
     .block(Block::default().borders(Borders::ALL));
-    frame.render_widget(in_card, in_area);
+    frame.render_widget(in_card, incoming_area);
 
     let out_card = Paragraph::new(Line::from(vec![
         Span::raw("Outgoing"),
@@ -359,7 +248,7 @@ fn render_overview(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ]))
     .block(Block::default().borders(Borders::ALL));
-    frame.render_widget(out_card, out_area);
+    frame.render_widget(out_card, outgoing_area);
 
     let unique = format!("IPv4: {} | IPv6: {}", data.top_ips.len(), 0);
     let unique_card = Paragraph::new(Line::from(vec![
@@ -373,34 +262,36 @@ fn render_overview(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ]))
     .block(Block::default().borders(Borders::ALL));
-    frame.render_widget(unique_card, ip_area);
+    frame.render_widget(unique_card, uniq_ip_area);
+}
 
+fn render_protocol_gauges(frame: &mut Frame, area: Rect, data: &AggregatedData) {
     let proto_total: u64 = data.protocols.values().sum();
     let mut sorted_protos: Vec<(&String, &u64)> = data.protocols.iter().collect();
     sorted_protos.sort_by(|a, b| b.1.cmp(a.1));
 
     let proto_block = Block::default().title(" Protocols ").borders(Borders::ALL);
-    let proto_inner = proto_block.inner(proto_area);
-    frame.render_widget(proto_block, proto_area);
+    let proto_inner = proto_block.inner(area);
+    frame.render_widget(proto_block, area);
 
-    let gauge_height = proto_inner.height as usize;
+    let gauge_height = usize::from(proto_inner.height);
     let visible_protos: Vec<_> = sorted_protos.iter().take(gauge_height).collect();
 
     for (i, (proto, count)) in visible_protos.iter().enumerate() {
-        let pct = if proto_total > 0 {
-            (**count as f64 / proto_total as f64 * 100.0) as u16
-        } else {
-            0
-        };
+        let pct = count
+            .saturating_mul(100)
+            .checked_div(proto_total)
+            .and_then(|v| u16::try_from(v.min(u64::from(u16::MAX))).ok())
+            .unwrap_or(0);
         let row_area = Rect {
             x: proto_inner.x,
-            y: proto_inner.y + i as u16,
+            y: proto_inner.y + to_u16_clamped(i),
             width: proto_inner.width,
             height: 1,
         };
         let gauge = Gauge::default()
             .percent(pct)
-            .label(format!(" {}  {:3}%  ({})", proto, pct, count))
+            .label(format!(" {proto}  {pct:3}%  ({count})"))
             .gauge_style(match proto.as_str() {
                 "TCP" => Color::Blue,
                 "UDP" => Color::Green,
@@ -411,9 +302,11 @@ fn render_overview(frame: &mut Frame, area: Rect, app: &App) {
             });
         frame.render_widget(gauge, row_area);
     }
+}
 
+fn render_top_tables(frame: &mut Frame, area: Rect, data: &AggregatedData) {
     let table_chunks = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .areas::<2>(tables_area);
+        .areas::<2>(area);
     let [ips_table_area, ports_table_area] = table_chunks;
 
     let ips_rows: Vec<Row> = data
@@ -473,27 +366,24 @@ fn render_overview(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(ports_table, ports_table_area);
 }
 
-fn render_daily(frame: &mut Frame, area: Rect, app: &App) {
-    let data = &app.data;
+struct DailyBarsResult {
+    bars: Vec<Bar<'static>>,
+    offset: usize,
+    max_count: u64,
+    bar_width: usize,
+    gap: usize,
+    show_all: bool,
+    num_days: usize,
+    bars_per_width: usize,
+}
 
-    if data.days.is_empty() {
-        let msg = Paragraph::new("No data available")
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Daily Activity "),
-            )
-            .alignment(ratatui::layout::Alignment::Center);
-        frame.render_widget(msg, area);
-        return;
-    }
-
-    let effective_idx = app
-        .selected_day_index
-        .unwrap_or_else(|| data.days.len().saturating_sub(1));
-
+fn build_daily_bars(
+    data: &AggregatedData,
+    effective_idx: usize,
+    area_width: u16,
+) -> DailyBarsResult {
     let num_days = data.days.len();
-    let avail = (area.width as usize).saturating_sub(2);
+    let avail = (area_width as usize).saturating_sub(2);
     let gap = 1usize;
     let total_gaps = num_days.saturating_sub(1) * gap;
 
@@ -506,25 +396,37 @@ fn render_daily(frame: &mut Frame, area: Rect, app: &App) {
     let bars_per_width = avail / (bar_width + gap);
     let show_all = bars_per_width >= num_days;
 
-    let (bars, offset, max_count) = if show_all {
-        let max_count = data.days.iter().map(|d| d.total_blocked).max().unwrap_or(1).max(1);
-        (
-            data.days
-                .iter()
-                .enumerate()
-                .map(|(i, d)| {
-                    let style = if i == effective_idx {
-                        Style::default().fg(Color::Yellow).bg(Color::DarkGray)
-                    } else {
-                        Style::default().fg(Color::Cyan)
-                    };
-                    Bar::with_label(d.date.format("%m/%d").to_string(), d.total_blocked)
-                        .style(style)
-                })
-                .collect::<Vec<_>>(),
-            0,
+    if show_all {
+        let max_count = data
+            .days
+            .iter()
+            .map(|d| d.total_blocked)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let bars = data
+            .days
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                let style = if i == effective_idx {
+                    Style::default().fg(Color::Yellow).bg(Color::DarkGray)
+                } else {
+                    Style::default().fg(Color::Cyan)
+                };
+                Bar::with_label(d.date.format("%m/%d").to_string(), d.total_blocked).style(style)
+            })
+            .collect();
+        DailyBarsResult {
+            bars,
+            offset: 0,
             max_count,
-        )
+            bar_width,
+            gap,
+            show_all: true,
+            num_days,
+            bars_per_width,
+        }
     } else {
         let max_offset = num_days.saturating_sub(bars_per_width);
         let offset = effective_idx
@@ -538,107 +440,42 @@ fn render_daily(frame: &mut Frame, area: Rect, app: &App) {
             .max()
             .unwrap_or(1)
             .max(1);
-        (
-            data.days[offset..end]
-                .iter()
-                .enumerate()
-                .map(|(i, d)| {
-                    let global_i = offset + i;
-                    let style = if global_i == effective_idx {
-                        Style::default().fg(Color::Yellow).bg(Color::DarkGray)
-                    } else {
-                        Style::default().fg(Color::Cyan)
-                    };
-                    Bar::with_label(d.date.format("%m/%d").to_string(), d.total_blocked)
-                        .style(style)
-                })
-                .collect(),
+        let bars = data.days[offset..end]
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                let global_i = offset + i;
+                let style = if global_i == effective_idx {
+                    Style::default().fg(Color::Yellow).bg(Color::DarkGray)
+                } else {
+                    Style::default().fg(Color::Cyan)
+                };
+                Bar::with_label(d.date.format("%m/%d").to_string(), d.total_blocked).style(style)
+            })
+            .collect();
+        DailyBarsResult {
+            bars,
             offset,
             max_count,
-        )
-    };
-
-    let chart = BarChart::new(bars)
-        .block(
-            Block::default()
-                .title(format!(
-                    " Daily Activity  [{}]  (←→ select, Enter → hourly) ",
-                    data.days[effective_idx].date
-                ))
-                .borders(Borders::ALL),
-        )
-        .max(max_count)
-        .bar_width(bar_width as u16)
-        .bar_gap(gap as u16);
-
-    frame.render_widget(chart, area);
-
-    if !show_all {
-        let scroll_indicator = format!(
-            " ◄ {} of {} ► ",
-            offset + 1,
-            num_days.saturating_sub(bars_per_width) + 1
-        );
-        let status = Paragraph::new(Line::from(vec![Span::styled(
-            scroll_indicator,
-            Style::default().fg(Color::DarkGray),
-        )]))
-        .alignment(ratatui::layout::Alignment::Center);
-        let status_area = Rect {
-            x: area.x,
-            y: area.y + area.height - 1,
-            width: area.width,
-            height: 1,
-        };
-        frame.render_widget(status, status_area);
+            bar_width,
+            gap,
+            show_all: false,
+            num_days,
+            bars_per_width,
+        }
     }
 }
 
-fn render_hourly(frame: &mut Frame, area: Rect, app: &App) {
-    let data = &app.data;
-
-    if data.days.is_empty() {
-        let msg = Paragraph::new("No day selected — go to Daily tab and press Enter")
-            .block(Block::default().borders(Borders::ALL).title(" Hourly "))
-            .alignment(ratatui::layout::Alignment::Center);
-        frame.render_widget(msg, area);
-        return;
-    }
-
-    let day_idx = app
-        .selected_day_index
-        .unwrap_or_else(|| data.days.len().saturating_sub(1))
-        .min(data.days.len().saturating_sub(1));
-    let day = &data.days[day_idx];
-
-    let effective_hour = app
-        .selected_hour
-        .or_else(|| App::last_hour_for_day(day))
-        .unwrap_or(0)
-        .min(23);
-
-    let num_hours = 24usize;
-    let avail = (area.width as usize).saturating_sub(2);
-    let gap = 1usize;
-    let total_gaps = num_hours.saturating_sub(1) * gap;
-
-    let bar_width = if avail > total_gaps {
-        ((avail - total_gaps) / num_hours).clamp(1, 6)
-    } else {
-        1usize
-    };
-
-    let max_count = day.hourly.iter().map(|h| h.count).max().unwrap_or(1).max(1);
-
+fn build_hourly_bars(day: &DailyReport, effective_hour: u32) -> Vec<Bar<'static>> {
     let mut hourly_map: HashMap<u32, u64> = HashMap::new();
     for h in &day.hourly {
         hourly_map.insert(h.hour, h.count);
     }
 
-    let bars: Vec<Bar> = (0..24)
+    (0..24)
         .map(|hour| {
             let count = hourly_map.get(&hour).copied().unwrap_or(0);
-            let label = format!("{:02}", hour);
+            let label = format!("{hour:02}");
             let style = if hour == effective_hour {
                 Style::default().fg(Color::Yellow)
             } else if count > 0 {
@@ -648,51 +485,13 @@ fn render_hourly(frame: &mut Frame, area: Rect, app: &App) {
             };
             Bar::with_label(label, count).style(style)
         })
-        .collect();
+        .collect()
+}
 
-    let hourly_entries: Vec<&LogEntry> = app
-        .entries
-        .iter()
-        .filter(|e| e.date == day.date && e.hour == effective_hour)
-        .collect();
+fn render_hourly_log_table(frame: &mut Frame, area: Rect, entries: &[&LogEntry], scroll: usize) {
+    let max_visible = (area.height as usize).saturating_sub(3).max(1);
 
-    let bar_area_height = if hourly_entries.is_empty() { 5 } else { 7 };
-
-    let chunks = Layout::vertical([
-        Constraint::Length(bar_area_height),
-        Constraint::Min(0),
-    ])
-    .areas::<2>(area);
-    let [chart_area, entries_area] = chunks;
-
-    let chart = BarChart::new(bars)
-        .block(
-            Block::default()
-                .title(format!(
-                    " Hourly: {}  (↑↓ hour {:02}:00, ←→ day) ",
-                    day.date, effective_hour
-                ))
-                .borders(Borders::ALL),
-        )
-        .max(max_count)
-        .bar_width(bar_width as u16)
-        .bar_gap(gap as u16);
-
-    frame.render_widget(chart, chart_area);
-
-    if hourly_entries.is_empty() {
-        let msg = Paragraph::new("No entries for this hour")
-            .block(Block::default().borders(Borders::ALL).title(" Logs "))
-            .alignment(ratatui::layout::Alignment::Center);
-        frame.render_widget(msg, entries_area);
-        return;
-    }
-
-    let max_visible = (entries_area.height as usize).saturating_sub(3).max(1);
-    let max_scroll = hourly_entries.len().saturating_sub(max_visible);
-    let scroll = app.hourly_scroll.min(max_scroll);
-
-    let rows: Vec<Row> = hourly_entries
+    let rows: Vec<Row> = entries
         .iter()
         .skip(scroll)
         .take(max_visible)
@@ -731,20 +530,295 @@ fn render_hourly(frame: &mut Frame, area: Rect, app: &App) {
         )
         .block(
             Block::default()
-                .title(format!(" Logs ({} entries) ", hourly_entries.len()))
+                .title(format!(" Logs ({} entries) ", entries.len()))
                 .borders(Borders::ALL),
         );
 
-    frame.render_widget(table, entries_area);
+    frame.render_widget(table, area);
 
-    if hourly_entries.len() > max_visible {
+    if entries.len() > max_visible {
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .begin_symbol(Some("↑"))
             .end_symbol(Some("↓"));
         let mut state =
-            ScrollbarState::new(hourly_entries.len().saturating_sub(max_visible)).position(scroll);
-        frame.render_stateful_widget(scrollbar, entries_area, &mut state);
+            ScrollbarState::new(entries.len().saturating_sub(max_visible)).position(scroll);
+        frame.render_stateful_widget(scrollbar, area, &mut state);
     }
+}
+
+fn handle_events(app: &mut App) -> io::Result<()> {
+    if let Event::Key(key) = event::read()? {
+        if key.kind != KeyEventKind::Press {
+            return Ok(());
+        }
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => app.running = false,
+            KeyCode::Char('1') => app.current_tab = 0,
+            KeyCode::Char('2') => app.current_tab = 1,
+            KeyCode::Char('3') => app.current_tab = 2,
+            KeyCode::Char('4') => app.current_tab = 3,
+            KeyCode::Tab => app.current_tab = (app.current_tab + 1) % 4,
+            KeyCode::BackTab => app.current_tab = (app.current_tab + 3) % 4,
+            KeyCode::Left => handle_left_key(app),
+            KeyCode::Right => handle_right_key(app),
+            KeyCode::Up => {
+                let step = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    3
+                } else {
+                    1
+                };
+                handle_scroll(app, step, -1);
+            }
+            KeyCode::Down => {
+                let step = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    3
+                } else {
+                    1
+                };
+                handle_scroll(app, step, 1);
+            }
+            KeyCode::PageUp => {
+                let step = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    30
+                } else {
+                    10
+                };
+                handle_scroll(app, step, -1);
+            }
+            KeyCode::PageDown => {
+                let step = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    30
+                } else {
+                    10
+                };
+                handle_scroll(app, step, 1);
+            }
+            KeyCode::Enter if app.current_tab == 1 && !app.data.days.is_empty() => {
+                let last = app.data.days.len().saturating_sub(1);
+                let idx = app.selected_day_index.unwrap_or(last).min(last);
+                app.selected_day_index = Some(idx);
+                app.selected_hour = App::last_hour_for_day(&app.data.days[idx]);
+                app.hourly_scroll = 0;
+                app.current_tab = 2;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn ui(frame: &mut Frame, app: &mut App) {
+    let chunks = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .areas::<3>(frame.area());
+    let [header_area, content_area, status_area] = chunks;
+
+    render_header(frame, header_area, app);
+    match app.current_tab {
+        0 => render_overview(frame, content_area, app),
+        1 => render_daily(frame, content_area, app),
+        2 => render_hourly(frame, content_area, app),
+        3 => render_raw(frame, content_area, app),
+        _ => {}
+    }
+    render_status(frame, status_area, app);
+}
+
+fn render_header(frame: &mut Frame, area: Rect, app: &App) {
+    let title = Span::styled(
+        " ufw-report ",
+        Style::default()
+            .fg(Color::White)
+            .bg(Color::Blue)
+            .add_modifier(Modifier::BOLD),
+    );
+
+    let mut tab_spans = vec![title];
+    for (i, tab) in TAB_TITLES.iter().enumerate() {
+        let style = if i == app.current_tab {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::LightYellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White).bg(Color::DarkGray)
+        };
+        let prefix = if i > 0 { " " } else { "" };
+        tab_spans.push(Span::styled(format!("{prefix}{tab}"), style));
+    }
+
+    let header = Paragraph::new(Line::from(tab_spans));
+    frame.render_widget(header, area);
+}
+
+fn render_status(frame: &mut Frame, area: Rect, _app: &App) {
+    let text = Line::from(vec![
+        Span::styled("[Tab]", Style::default().fg(Color::Cyan)),
+        Span::raw(" Tab "),
+        Span::styled("[←→]", Style::default().fg(Color::Cyan)),
+        Span::raw("Day/Hour "),
+        Span::styled("[↑↓]", Style::default().fg(Color::Cyan)),
+        Span::raw("Scroll "),
+        Span::styled("[Enter]", Style::default().fg(Color::Cyan)),
+        Span::raw("Hourly "),
+        Span::styled("[q]", Style::default().fg(Color::Cyan)),
+        Span::raw("Quit"),
+    ]);
+    let status = Paragraph::new(text).style(Style::default().bg(Color::DarkGray).fg(Color::White));
+    frame.render_widget(status, area);
+}
+
+fn render_overview(frame: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Min(0),
+    ])
+    .areas::<3>(area);
+    let [cards_area, proto_area, tables_area] = chunks;
+
+    render_summary_cards(frame, cards_area, &app.data);
+    render_protocol_gauges(frame, proto_area, &app.data);
+    render_top_tables(frame, tables_area, &app.data);
+}
+
+fn render_daily(frame: &mut Frame, area: Rect, app: &App) {
+    let data = &app.data;
+
+    if data.days.is_empty() {
+        let msg = Paragraph::new("No data available")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Daily Activity "),
+            )
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(msg, area);
+        return;
+    }
+
+    let effective_idx = app
+        .selected_day_index
+        .unwrap_or(data.days.len().saturating_sub(1));
+
+    let result = build_daily_bars(data, effective_idx, area.width);
+
+    let chart = BarChart::new(result.bars)
+        .block(
+            Block::default()
+                .title(format!(
+                    " Daily Activity  [{}]  (←→ select, Enter → hourly) ",
+                    data.days[effective_idx].date
+                ))
+                .borders(Borders::ALL),
+        )
+        .max(result.max_count)
+        .bar_width(to_u16_clamped(result.bar_width))
+        .bar_gap(to_u16_clamped(result.gap));
+
+    frame.render_widget(chart, area);
+
+    if !result.show_all {
+        let scroll_indicator = format!(
+            " ◄ {} of {} ► ",
+            result.offset + 1,
+            result.num_days.saturating_sub(result.bars_per_width) + 1
+        );
+        let status = Paragraph::new(Line::from(vec![Span::styled(
+            scroll_indicator,
+            Style::default().fg(Color::DarkGray),
+        )]))
+        .alignment(ratatui::layout::Alignment::Center);
+        let status_area = Rect {
+            x: area.x,
+            y: area.y + area.height - 1,
+            width: area.width,
+            height: 1,
+        };
+        frame.render_widget(status, status_area);
+    }
+}
+
+fn render_hourly(frame: &mut Frame, area: Rect, app: &App) {
+    let data = &app.data;
+
+    if data.days.is_empty() {
+        let msg = Paragraph::new("No day selected — go to Daily tab and press Enter")
+            .block(Block::default().borders(Borders::ALL).title(" Hourly "))
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(msg, area);
+        return;
+    }
+
+    let day_idx = app
+        .selected_day_index
+        .unwrap_or(data.days.len().saturating_sub(1))
+        .min(data.days.len().saturating_sub(1));
+    let day = &data.days[day_idx];
+
+    let effective_hour = app
+        .selected_hour
+        .or_else(|| App::last_hour_for_day(day))
+        .unwrap_or(0)
+        .min(23);
+
+    let num_hours = 24usize;
+    let avail = (area.width as usize).saturating_sub(2);
+    let gap = 1usize;
+    let total_gaps = num_hours.saturating_sub(1) * gap;
+
+    let bar_width = if avail > total_gaps {
+        ((avail - total_gaps) / num_hours).clamp(1, 6)
+    } else {
+        1usize
+    };
+
+    let max_count = day.hourly.iter().map(|h| h.count).max().unwrap_or(1).max(1);
+    let bars = build_hourly_bars(day, effective_hour);
+
+    let hourly_entries: Vec<&LogEntry> = app
+        .entries
+        .iter()
+        .filter(|e| e.date == day.date && e.hour == effective_hour)
+        .collect();
+
+    let bar_area_height = if hourly_entries.is_empty() { 5 } else { 7 };
+
+    let chunks = Layout::vertical([Constraint::Length(bar_area_height), Constraint::Min(0)])
+        .areas::<2>(area);
+    let [chart_area, entries_area] = chunks;
+
+    let chart = BarChart::new(bars)
+        .block(
+            Block::default()
+                .title(format!(
+                    " Hourly: {}  (↑↓ hour {:02}:00, ←→ day) ",
+                    day.date, effective_hour
+                ))
+                .borders(Borders::ALL),
+        )
+        .max(max_count)
+        .bar_width(to_u16_clamped(bar_width))
+        .bar_gap(to_u16_clamped(gap));
+
+    frame.render_widget(chart, chart_area);
+
+    if hourly_entries.is_empty() {
+        let msg = Paragraph::new("No entries for this hour")
+            .block(Block::default().borders(Borders::ALL).title(" Logs "))
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(msg, entries_area);
+        return;
+    }
+
+    let max_visible = (entries_area.height as usize).saturating_sub(3).max(1);
+    let max_scroll = hourly_entries.len().saturating_sub(max_visible);
+    let scroll = app.hourly_scroll.min(max_scroll);
+
+    render_hourly_log_table(frame, entries_area, &hourly_entries, scroll);
 }
 
 fn render_raw(frame: &mut Frame, area: Rect, app: &App) {

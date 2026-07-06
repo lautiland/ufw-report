@@ -202,6 +202,7 @@ fn save_cache(cache_path: &Path, entries: &[LogEntry]) {
 }
 
 /// Public wrapper for testing. Parses a single UFW log line.
+#[must_use]
 pub fn parse_log_line_standalone(
     line: &str,
     current_year: i32,
@@ -209,6 +210,10 @@ pub fn parse_log_line_standalone(
     parse_log_line(line, current_year)
 }
 
+/// # Errors
+///
+/// Returns [`UfwError::LogNotFound`] if the log file doesn't exist, or
+/// [`UfwError::PermissionDenied`] if the file cannot be read.
 pub fn parse_ufw_log_range(
     log_path: &str,
     from: NaiveDate,
@@ -306,14 +311,14 @@ fn build_single_report(date: NaiveDate, entries: &[&LogEntry]) -> DailyReport {
         .into_iter()
         .map(|(ip, count)| IpEntry { ip, count })
         .collect();
-    top_ips.sort_by(|a, b| b.count.cmp(&a.count));
+    top_ips.sort_by_key(|b| std::cmp::Reverse(b.count));
     top_ips.truncate(10);
 
     let mut top_ports: Vec<PortEntry> = port_map
         .into_iter()
         .map(|(port, count)| PortEntry { port, count })
         .collect();
-    top_ports.sort_by(|a, b| b.count.cmp(&a.count));
+    top_ports.sort_by_key(|b| std::cmp::Reverse(b.count));
     top_ports.truncate(10);
 
     DailyReport {

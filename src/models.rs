@@ -60,6 +60,7 @@ pub struct AggregatedData {
     pub protocols: HashMap<String, u64>,
 }
 
+#[must_use]
 pub fn build_aggregated(reports: Vec<DailyReport>, all_entries: &[LogEntry]) -> AggregatedData {
     let total_blocked = reports.iter().map(|d| d.total_blocked).sum();
 
@@ -88,14 +89,14 @@ pub fn build_aggregated(reports: Vec<DailyReport>, all_entries: &[LogEntry]) -> 
         .into_iter()
         .map(|(ip, count)| IpEntry { ip, count })
         .collect();
-    top_ips.sort_by(|a, b| b.count.cmp(&a.count));
+    top_ips.sort_by_key(|b| std::cmp::Reverse(b.count));
     top_ips.truncate(10);
 
     let mut top_ports: Vec<PortEntry> = global_ports
         .into_iter()
         .map(|(port, count)| PortEntry { port, count })
         .collect();
-    top_ports.sort_by(|a, b| b.count.cmp(&a.count));
+    top_ports.sort_by_key(|b| std::cmp::Reverse(b.count));
     top_ports.truncate(10);
 
     AggregatedData {
