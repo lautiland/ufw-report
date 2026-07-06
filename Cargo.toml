@@ -2,6 +2,7 @@
 name = "ufw-report"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "CLI tool that reads UFW logs, analyzes blocked traffic, and shows an interactive TUI report"
 
 [dependencies]
