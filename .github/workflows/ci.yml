@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar caché de Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "ufw-report-cache"
+
+      - name: Verificar formato (fmt)
+        run: cargo fmt --all -- --check
+
+      - name: Análisis estricto (Clippy + Pedantic)
+        run: cargo clippy --all-targets --all-features -- -W clippy::pedantic -D warnings
+
+      - name: Compilar proyecto (Build)
+        run: cargo build --verbose
+
+      - name: Ejecutar tests
+        run: cargo test --verbose
