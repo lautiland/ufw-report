@@ -278,12 +278,11 @@ fn render_protocol_gauges(frame: &mut Frame, area: Rect, data: &AggregatedData) 
     let visible_protos: Vec<_> = sorted_protos.iter().take(gauge_height).collect();
 
     for (i, (proto, count)) in visible_protos.iter().enumerate() {
-        let pct = if proto_total > 0 {
-            count.saturating_mul(100) / proto_total
-        } else {
-            0
-        };
-        let pct = u16::try_from(pct.min(u64::from(u16::MAX))).unwrap_or(u16::MAX);
+        let pct = count
+            .saturating_mul(100)
+            .checked_div(proto_total)
+            .and_then(|v| u16::try_from(v.min(u64::from(u16::MAX))).ok())
+            .unwrap_or(0);
         let row_area = Rect {
             x: proto_inner.x,
             y: proto_inner.y + to_u16_clamped(i),
@@ -594,15 +593,13 @@ fn handle_events(app: &mut App) -> io::Result<()> {
                 };
                 handle_scroll(app, step, 1);
             }
-            KeyCode::Enter => {
-                if app.current_tab == 1 && !app.data.days.is_empty() {
-                    let last = app.data.days.len().saturating_sub(1);
-                    let idx = app.selected_day_index.unwrap_or(last).min(last);
-                    app.selected_day_index = Some(idx);
-                    app.selected_hour = App::last_hour_for_day(&app.data.days[idx]);
-                    app.hourly_scroll = 0;
-                    app.current_tab = 2;
-                }
+            KeyCode::Enter if app.current_tab == 1 && !app.data.days.is_empty() => {
+                let last = app.data.days.len().saturating_sub(1);
+                let idx = app.selected_day_index.unwrap_or(last).min(last);
+                app.selected_day_index = Some(idx);
+                app.selected_hour = App::last_hour_for_day(&app.data.days[idx]);
+                app.hourly_scroll = 0;
+                app.current_tab = 2;
             }
             _ => {}
         }
