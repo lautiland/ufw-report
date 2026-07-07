@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
-use ufw_report::models::{DailyReport, Direction, HourBreak, IpEntry, LogEntry, PortEntry};
+use ufw_report::domain::{DailyReport, Direction, HourBreak, IpEntry, LogEntry, PortEntry};
 use ufw_report::output;
 
 fn make_entry(date: NaiveDate, hour: u32, ip: &str, port: Option<u16>, proto: &str) -> LogEntry {
@@ -175,7 +175,7 @@ fn test_build_aggregated_consistency() {
         },
     ];
 
-    let aggregated = ufw_report::models::build_aggregated(reports, &entries);
+    let aggregated = ufw_report::domain::build_aggregated(reports, &entries);
     assert_eq!(aggregated.total_blocked, 3);
     assert_eq!(aggregated.total_incoming, 3);
     assert_eq!(aggregated.top_ips[0].ip, "10.0.0.1");

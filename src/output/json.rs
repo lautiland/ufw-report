@@ -1,38 +1,18 @@
 use std::io::Write;
 
-use crate::models::LogEntry;
+use crate::domain::LogEntry;
 
-pub fn write_csv<W: Write>(mut writer: W, entries: &[LogEntry]) -> anyhow::Result<()> {
-    writeln!(
-        writer,
-        "date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction"
-    )?;
-    for e in entries {
-        writeln!(
-            writer,
-            "{},{},{},{},{},{},{},{}",
-            e.date.format("%Y-%m-%d"),
-            e.hour,
-            e.src_ip,
-            e.dst_ip.as_deref().unwrap_or(""),
-            e.src_port.map_or(String::new(), |p| p.to_string()),
-            e.dst_port.map_or(String::new(), |p| p.to_string()),
-            e.protocol.as_deref().unwrap_or(""),
-            match e.direction {
-                crate::models::Direction::Incoming => "in",
-                crate::models::Direction::Outgoing => "out",
-                crate::models::Direction::Unknown => "?",
-            },
-        )?;
-    }
-    Ok(())
-}
-
+/// # Errors
+///
+/// Returns an error if serialization or writing fails.
 pub fn write_json<W: Write>(writer: W, entries: &[LogEntry]) -> anyhow::Result<()> {
     serde_json::to_writer(writer, entries)?;
     Ok(())
 }
 
+/// # Errors
+///
+/// Returns an error if file creation or writing fails.
 pub fn write_output(entries: &[LogEntry], path: &str) -> anyhow::Result<()> {
     if path == "-" {
         write_json(std::io::stdout().lock(), entries)?;
@@ -40,9 +20,12 @@ pub fn write_output(entries: &[LogEntry], path: &str) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    if path.ends_with(".csv") {
+    if std::path::Path::new(path)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"))
+    {
         let file = std::fs::File::create(path)?;
-        write_csv(file, entries)?;
+        super::csv::write_csv(file, entries)?;
     } else {
         let file = std::fs::File::create(path)?;
         write_json(file, entries)?;
@@ -55,6 +38,7 @@ pub fn write_output(entries: &[LogEntry], path: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::Direction;
     use chrono::NaiveDate;
 
     fn sample_entries() -> Vec<LogEntry> {
@@ -67,7 +51,7 @@ mod tests {
                 src_port: Some(54321),
                 dst_port: Some(22),
                 protocol: Some("TCP".to_string()),
-                direction: crate::models::Direction::Incoming,
+                direction: Direction::Incoming,
             },
             LogEntry {
                 date: NaiveDate::from_ymd_opt(2026, 6, 29).unwrap(),
@@ -77,7 +61,7 @@ mod tests {
                 src_port: None,
                 dst_port: Some(443),
                 protocol: Some("TCP".to_string()),
-                direction: crate::models::Direction::Outgoing,
+                direction: Direction::Outgoing,
             },
         ]
     }
@@ -86,7 +70,7 @@ mod tests {
     fn test_csv_output() {
         let entries = sample_entries();
         let mut buf = Vec::new();
-        write_csv(&mut buf, &entries).unwrap();
+        super::super::csv::write_csv(&mut buf, &entries).unwrap();
         let output = String::from_utf8(buf).unwrap();
 
         assert!(
@@ -127,7 +111,7 @@ mod tests {
     #[test]
     fn test_csv_empty() {
         let mut buf = Vec::new();
-        write_csv(&mut buf, &[]).unwrap();
+        super::super::csv::write_csv(&mut buf, &[]).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert_eq!(
             output,

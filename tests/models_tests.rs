@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
-use ufw_report::models::{
+use ufw_report::domain::{
     build_aggregated, DailyReport, Direction, HourBreak, IpEntry, LogEntry, PortEntry,
 };
 
@@ -100,12 +100,10 @@ fn test_global_top_ips_aggregates_across_days() {
 
     let aggregated = build_aggregated(reports, &entries);
 
-    // 10.0.0.1 aparece 3 veces en total
     assert!(!aggregated.top_ips.is_empty());
     assert_eq!(aggregated.top_ips[0].ip, "10.0.0.1");
     assert_eq!(aggregated.top_ips[0].count, 3);
 
-    // total_blocked debe ser la suma de los daily reports
     assert_eq!(aggregated.total_blocked, 4);
 }
 

@@ -1,53 +1,9 @@
-use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum Direction {
-    Incoming,
-    Outgoing,
-    Unknown,
-}
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogEntry {
-    pub date: NaiveDate,
-    pub hour: u32,
-    pub src_ip: String,
-    pub dst_ip: Option<String>,
-    pub src_port: Option<u16>,
-    pub dst_port: Option<u16>,
-    pub protocol: Option<String>,
-    pub direction: Direction,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HourBreak {
-    pub hour: u32,
-    pub count: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DailyReport {
-    pub date: NaiveDate,
-    pub total_blocked: u64,
-    pub hourly: Vec<HourBreak>,
-    pub top_ips: Vec<IpEntry>,
-    pub top_ports: Vec<PortEntry>,
-    pub protocols: HashMap<String, u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IpEntry {
-    pub ip: String,
-    pub count: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PortEntry {
-    pub port: u16,
-    pub count: u64,
-}
+use super::entry::{Direction, LogEntry};
+use super::reports::{DailyReport, IpEntry, PortEntry};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregatedData {
@@ -60,6 +16,7 @@ pub struct AggregatedData {
     pub protocols: HashMap<String, u64>,
 }
 
+#[must_use]
 pub fn build_aggregated(reports: Vec<DailyReport>, all_entries: &[LogEntry]) -> AggregatedData {
     let total_blocked = reports.iter().map(|d| d.total_blocked).sum();
 

@@ -1,8 +1,8 @@
 use chrono::NaiveDate;
-use ufw_report::models::Direction;
+use ufw_report::domain::Direction;
 use ufw_report::parser;
 
-fn pl(line: &str) -> Option<(NaiveDate, u32, ufw_report::models::LogEntry)> {
+fn pl(line: &str) -> Option<(NaiveDate, u32, ufw_report::domain::LogEntry)> {
     parser::parse_log_line_standalone(line, 2026)
 }
 

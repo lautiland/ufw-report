@@ -4,8 +4,8 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use ufw_report::config::{AppConfig, CliArgs};
+use ufw_report::domain::build_aggregated;
 use ufw_report::error::UfwError;
-use ufw_report::models::build_aggregated;
 use ufw_report::output;
 use ufw_report::parser;
 
@@ -27,22 +27,26 @@ fn main() -> anyhow::Result<()> {
     );
     std::io::stderr().flush()?;
 
-    let parse_result =
-        match parser::parse_ufw_log_range(&config.log_file, config.from_date, config.to_date) {
-            Err(UfwError::PermissionDenied { path, hint }) => {
-                eprintln!("\nPermiso denegado al leer {}.\nSugerencia: {}", path, hint);
-                std::process::exit(1);
-            }
-            Err(UfwError::LogNotFound(path)) => {
-                eprintln!("\nNo se encontró el archivo de log: {}", path);
-                std::process::exit(1);
-            }
-            result => result?,
-        };
+    let parse_result = match parser::parse_ufw_log_range(
+        &config.log_file,
+        &config.log_dir,
+        config.from_date,
+        config.to_date,
+    ) {
+        Err(UfwError::PermissionDenied { path, hint }) => {
+            eprintln!("\nPermiso denegado al leer {path}.\nSugerencia: {hint}");
+            std::process::exit(1);
+        }
+        Err(UfwError::LogNotFound(path)) => {
+            eprintln!("\nNo se encontró el archivo de log: {path}");
+            std::process::exit(1);
+        }
+        result => result?,
+    };
 
     let entry_count = parse_result.all_entries.len();
     let day_count = parse_result.reports.len();
-    eprintln!("{} entries, {} days", entry_count, day_count);
+    eprintln!("{entry_count} entries, {day_count} days");
 
     if let Some(ref output_path) = config.output {
         output::write_output(&parse_result.all_entries, output_path)?;

@@ -68,7 +68,7 @@
 *Garantizando la estabilidad y facilitando la adopción por parte de SysAdmins.*
 
 * **5.1 Calidad y Seguridad Base (Estado Actual)**
-* 5.1.1 Suite de 56 tests (parser, config, models).
+* 5.1.1 Suite de tests (parser, config, models, output).
 * 5.1.2 CI Pipeline con GitHub Actions (fmt, clippy, tests).
 * 5.1.3 *Panic hook* para restauración de la terminal en caso de errores.
 

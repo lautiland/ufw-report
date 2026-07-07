@@ -11,6 +11,9 @@ pub struct CliArgs {
     #[arg(short = 'l', long, default_value = "/var/log/ufw.log")]
     pub log_file: String,
 
+    #[arg(short = 'd', long, default_value = "/var/log")]
+    pub log_dir: String,
+
     #[arg(long)]
     pub csv: bool,
 
@@ -30,6 +33,7 @@ pub struct CliArgs {
 #[derive(Debug)]
 pub struct AppConfig {
     pub log_file: String,
+    pub log_dir: String,
     pub from_date: NaiveDate,
     pub to_date: NaiveDate,
     pub csv_mode: bool,
@@ -37,6 +41,9 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// # Errors
+    ///
+    /// Returns an error if the date format is invalid or `--from` is after `--to`.
     pub fn from_cli(args: &CliArgs) -> anyhow::Result<Self> {
         let today = chrono::Local::now().date_naive();
 
@@ -52,13 +59,12 @@ impl AppConfig {
 
         anyhow::ensure!(
             from_date <= to_date,
-            "--from ({}) debe ser anterior o igual a --to ({})",
-            from_date,
-            to_date,
+            "--from ({from_date}) debe ser anterior o igual a --to ({to_date})",
         );
 
         Ok(AppConfig {
             log_file: args.log_file.clone(),
+            log_dir: args.log_dir.clone(),
             from_date,
             to_date,
             csv_mode: args.csv,

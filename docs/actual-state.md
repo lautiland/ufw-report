@@ -45,7 +45,7 @@ Rust | ratatui + crossterm | clap | chrono | serde | regex | tracing
 | `Enter` | In Daily tab: switch to Hourly view |
 
 ### Calidad
-- 56 tests (parser, config, models, output)
+- Suite de tests (parser, config, models, output)
 - CI con GitHub Actions (check, clippy, test, fmt, build)
 - Panic hook que restaura terminal en caso de crash
 

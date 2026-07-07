@@ -2,6 +2,7 @@ use ufw_report::config::{AppConfig, CliArgs};
 
 fn make_args(
     log_file: &str,
+    log_dir: &str,
     csv: bool,
     output: Option<&str>,
     from: Option<&str>,
@@ -10,17 +11,26 @@ fn make_args(
 ) -> CliArgs {
     CliArgs {
         log_file: log_file.to_string(),
+        log_dir: log_dir.to_string(),
         csv,
-        output: output.map(|s| s.to_string()),
-        from: from.map(|s| s.to_string()),
-        to: to.map(|s| s.to_string()),
+        output: output.map(ToString::to_string),
+        from: from.map(ToString::to_string),
+        to: to.map(ToString::to_string),
         verbose,
     }
 }
 
 #[test]
 fn test_default_dates() {
-    let args = make_args("/var/log/ufw.log", false, None, None, None, false);
+    let args = make_args(
+        "/var/log/ufw.log",
+        "/var/log",
+        false,
+        None,
+        None,
+        None,
+        false,
+    );
     let config = AppConfig::from_cli(&args).unwrap();
     let today = chrono::Local::now().date_naive();
     assert_eq!(config.to_date, today);
@@ -31,6 +41,7 @@ fn test_default_dates() {
 fn test_custom_dates() {
     let args = make_args(
         "/var/log/ufw.log",
+        "/var/log",
         false,
         None,
         Some("2026-01-01"),
@@ -44,7 +55,15 @@ fn test_custom_dates() {
 
 #[test]
 fn test_csv_flag() {
-    let args = make_args("/var/log/ufw.log", true, None, None, None, false);
+    let args = make_args(
+        "/var/log/ufw.log",
+        "/var/log",
+        true,
+        None,
+        None,
+        None,
+        false,
+    );
     let config = AppConfig::from_cli(&args).unwrap();
     assert!(config.csv_mode);
 }
@@ -53,6 +72,7 @@ fn test_csv_flag() {
 fn test_output_flag() {
     let args = make_args(
         "/var/log/ufw.log",
+        "/var/log",
         false,
         Some("report.json"),
         None,
@@ -65,7 +85,15 @@ fn test_output_flag() {
 
 #[test]
 fn test_log_file_custom() {
-    let args = make_args("/custom/path/ufw.log", false, None, None, None, false);
+    let args = make_args(
+        "/custom/path/ufw.log",
+        "/custom/path",
+        false,
+        None,
+        None,
+        None,
+        false,
+    );
     let config = AppConfig::from_cli(&args).unwrap();
     assert_eq!(config.log_file, "/custom/path/ufw.log");
 }
@@ -74,6 +102,7 @@ fn test_log_file_custom() {
 fn test_reversed_dates_returns_error() {
     let args = make_args(
         "/var/log/ufw.log",
+        "/var/log",
         false,
         None,
         Some("2026-06-30"),
@@ -90,6 +119,7 @@ fn test_reversed_dates_returns_error() {
 fn test_invalid_date_format_returns_error() {
     let args = make_args(
         "/var/log/ufw.log",
+        "/var/log",
         false,
         None,
         Some("2026/01/01"),
