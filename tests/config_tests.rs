@@ -1,4 +1,4 @@
-use ufw_report::config::{AppConfig, CliArgs};
+use ufw_report::cli::{AppConfig, CliArgs};
 
 fn make_args(
     log_file: &str,
