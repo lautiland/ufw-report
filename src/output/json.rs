@@ -4,35 +4,6 @@ use crate::models::LogEntry;
 
 /// # Errors
 ///
-/// Returns an error if writing to the writer fails.
-pub fn write_csv<W: Write>(mut writer: W, entries: &[LogEntry]) -> anyhow::Result<()> {
-    writeln!(
-        writer,
-        "date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction"
-    )?;
-    for e in entries {
-        writeln!(
-            writer,
-            "{},{},{},{},{},{},{},{}",
-            e.date.format("%Y-%m-%d"),
-            e.hour,
-            e.src_ip,
-            e.dst_ip.as_deref().unwrap_or(""),
-            e.src_port.map_or(String::new(), |p| p.to_string()),
-            e.dst_port.map_or(String::new(), |p| p.to_string()),
-            e.protocol.as_deref().unwrap_or(""),
-            match e.direction {
-                crate::models::Direction::Incoming => "in",
-                crate::models::Direction::Outgoing => "out",
-                crate::models::Direction::Unknown => "?",
-            },
-        )?;
-    }
-    Ok(())
-}
-
-/// # Errors
-///
 /// Returns an error if serialization or writing fails.
 pub fn write_json<W: Write>(writer: W, entries: &[LogEntry]) -> anyhow::Result<()> {
     serde_json::to_writer(writer, entries)?;
@@ -54,7 +25,7 @@ pub fn write_output(entries: &[LogEntry], path: &str) -> anyhow::Result<()> {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"))
     {
         let file = std::fs::File::create(path)?;
-        write_csv(file, entries)?;
+        super::csv::write_csv(file, entries)?;
     } else {
         let file = std::fs::File::create(path)?;
         write_json(file, entries)?;
@@ -95,21 +66,6 @@ mod tests {
     }
 
     #[test]
-    fn test_csv_output() {
-        let entries = sample_entries();
-        let mut buf = Vec::new();
-        write_csv(&mut buf, &entries).unwrap();
-        let output = String::from_utf8(buf).unwrap();
-
-        assert!(
-            output.starts_with("date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction\n")
-        );
-        assert!(output.contains("2026-06-28,8,10.0.0.1,192.168.1.1,54321,22,TCP,in"));
-        assert!(output.contains("2026-06-29,22,10.0.0.3,,,443,TCP,out"));
-        assert_eq!(output.lines().count(), 3); // header + 2 entries
-    }
-
-    #[test]
     fn test_json_output() {
         let entries = sample_entries();
         let mut buf = Vec::new();
@@ -134,17 +90,6 @@ mod tests {
         assert_eq!(deserialized.len(), 2);
         assert_eq!(deserialized[0].src_ip, entries[0].src_ip);
         assert_eq!(deserialized[1].dst_port, entries[1].dst_port);
-    }
-
-    #[test]
-    fn test_csv_empty() {
-        let mut buf = Vec::new();
-        write_csv(&mut buf, &[]).unwrap();
-        let output = String::from_utf8(buf).unwrap();
-        assert_eq!(
-            output,
-            "date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction\n"
-        );
     }
 
     #[test]
