@@ -50,4 +50,18 @@ pub struct CliArgs {
 
     #[arg(long, help = "Do not read or write the parse cache")]
     pub no_cache: bool,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Load analysis thresholds from an explicit TOML config file"
+    )]
+    pub config: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Write threat findings to PATH as JSON, or Markdown when the path ends in .md; use '-' for stdout"
+    )]
+    pub findings: Option<String>,
 }

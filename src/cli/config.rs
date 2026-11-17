@@ -10,6 +10,8 @@ pub struct AppConfig {
     pub csv_mode: bool,
     pub output: Option<String>,
     pub no_cache: bool,
+    pub config_path: Option<String>,
+    pub findings: Option<String>,
 }
 
 impl AppConfig {
@@ -41,6 +43,8 @@ impl AppConfig {
             csv_mode: args.csv,
             output: args.output.clone(),
             no_cache: args.no_cache,
+            config_path: args.config.clone(),
+            findings: args.findings.clone(),
         })
     }
 }

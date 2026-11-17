@@ -16,6 +16,8 @@ fn make_args(
         to: to.map(std::string::ToString::to_string),
         verbose,
         no_cache: false,
+        config: None,
+        findings: None,
     }
 }
 
@@ -107,4 +109,16 @@ fn test_no_cache_flag_is_propagated() {
     args.no_cache = true;
     let config = AppConfig::from_cli(&args).unwrap();
     assert!(config.no_cache);
+}
+
+#[test]
+fn test_config_and_findings_flags_are_propagated() {
+    let mut args = make_args("/var/log/ufw.log", false, None, None, None, false);
+    args.config = Some("analysis.toml".to_string());
+    args.findings = Some("findings.md".to_string());
+
+    let config = AppConfig::from_cli(&args).unwrap();
+
+    assert_eq!(config.config_path.as_deref(), Some("analysis.toml"));
+    assert_eq!(config.findings.as_deref(), Some("findings.md"));
 }

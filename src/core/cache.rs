@@ -6,9 +6,9 @@ use std::time::UNIX_EPOCH;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
-use crate::models::LogEntry;
+use crate::models::{LogEntry, ParseStats};
 
-const CACHE_VERSION: u32 = 2;
+const CACHE_VERSION: u32 = 3;
 const PARSER_VERSION: u32 = 1;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -17,6 +17,8 @@ struct CacheFile {
     parser_version: u32,
     log_len: u64,
     log_mtime_secs: u64,
+    #[serde(default)]
+    stats: ParseStats,
     entries: Vec<LogEntry>,
 }
 
@@ -63,7 +65,7 @@ pub(crate) fn try_load_cache(
     log_path: &Path,
     from: NaiveDate,
     to: NaiveDate,
-) -> Option<Vec<LogEntry>> {
+) -> Option<(Vec<LogEntry>, ParseStats)> {
     let (log_len, log_mtime_secs) = metadata_snapshot(log_path)?;
     let raw = std::fs::read_to_string(cache_path).ok()?;
     let cache: CacheFile = serde_json::from_str(&raw).ok()?;
@@ -76,20 +78,25 @@ pub(crate) fn try_load_cache(
         return None;
     }
 
-    Some(
-        cache
-            .entries
-            .into_iter()
-            .filter(|entry| entry.date >= from && entry.date <= to)
-            .collect(),
-    )
+    let entries = cache
+        .entries
+        .into_iter()
+        .filter(|entry| entry.date >= from && entry.date <= to)
+        .collect();
+
+    Some((entries, cache.stats))
 }
 
 /// Persists every parsed entry along with the log fingerprint.
 ///
 /// Returns `false` when the cache could not be written. The caller decides
 /// whether to surface that as a warning.
-pub(crate) fn save_cache(cache_path: &Path, log_path: &Path, entries: &[LogEntry]) -> bool {
+pub(crate) fn save_cache(
+    cache_path: &Path,
+    log_path: &Path,
+    entries: &[LogEntry],
+    stats: &ParseStats,
+) -> bool {
     let Some((log_len, log_mtime_secs)) = metadata_snapshot(log_path) else {
         return false;
     };
@@ -105,6 +112,7 @@ pub(crate) fn save_cache(cache_path: &Path, log_path: &Path, entries: &[LogEntry
         parser_version: PARSER_VERSION,
         log_len,
         log_mtime_secs,
+        stats: stats.clone(),
         entries: entries.to_vec(),
     };
     let Ok(json) = serde_json::to_vec(&cache) else {
@@ -148,6 +156,14 @@ mod tests {
         ]
     }
 
+    fn sample_stats() -> ParseStats {
+        ParseStats {
+            total_lines: 2,
+            block_lines: 2,
+            ..ParseStats::default()
+        }
+    }
+
     #[test]
     fn test_cache_serves_wider_range() {
         let dir = tempfile::tempdir().unwrap();
@@ -155,15 +171,21 @@ mod tests {
         std::fs::write(&log_path, "log contents").unwrap();
         let cache_path = cache_file_for(&log_path, dir.path());
 
-        assert!(save_cache(&cache_path, &log_path, &sample_entries()));
+        assert!(save_cache(
+            &cache_path,
+            &log_path,
+            &sample_entries(),
+            &sample_stats()
+        ));
 
         let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
         let to_june = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
-        let cached = try_load_cache(&cache_path, &log_path, from, to_june).unwrap();
+        let (cached, stats) = try_load_cache(&cache_path, &log_path, from, to_june).unwrap();
         assert_eq!(cached.len(), 1);
+        assert_eq!(stats.total_lines, 2);
 
         let to_july = NaiveDate::from_ymd_opt(2026, 7, 31).unwrap();
-        let cached = try_load_cache(&cache_path, &log_path, from, to_july).unwrap();
+        let (cached, _) = try_load_cache(&cache_path, &log_path, from, to_july).unwrap();
         assert_eq!(cached.len(), 2);
     }
 
@@ -173,7 +195,12 @@ mod tests {
         let log_path = dir.path().join("ufw.log");
         std::fs::write(&log_path, "first").unwrap();
         let cache_path = cache_file_for(&log_path, dir.path());
-        assert!(save_cache(&cache_path, &log_path, &sample_entries()));
+        assert!(save_cache(
+            &cache_path,
+            &log_path,
+            &sample_entries(),
+            &sample_stats()
+        ));
 
         std::fs::write(&log_path, "second, longer contents").unwrap();
 
@@ -188,7 +215,12 @@ mod tests {
         let log_path = dir.path().join("ufw.log");
         std::fs::write(&log_path, "log contents").unwrap();
         let cache_path = cache_file_for(&log_path, dir.path());
-        assert!(save_cache(&cache_path, &log_path, &sample_entries()));
+        assert!(save_cache(
+            &cache_path,
+            &log_path,
+            &sample_entries(),
+            &sample_stats()
+        ));
 
         let raw = std::fs::read_to_string(&cache_path).unwrap();
         let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
