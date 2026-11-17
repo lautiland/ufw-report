@@ -33,5 +33,8 @@ jobs:
       - name: Build project
         run: cargo build --verbose --locked
 
+      - name: Build release binary (locked)
+        run: cargo build --release --verbose --locked
+
       - name: Run tests
         run: cargo test --verbose --locked
