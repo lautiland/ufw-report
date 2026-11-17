@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
 
     let parse_options = ParseOptions {
         use_cache: !config.no_cache,
-        cache_dir: None,
+        ..ParseOptions::default()
     };
 
     let parse_result = match core::parse_ufw_log_range_with_options(

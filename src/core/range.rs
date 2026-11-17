@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 
 use crate::error::UfwError;
 use crate::models::{DailyReport, HourBreak, IpEntry, LogEntry, PortEntry};
@@ -14,6 +14,9 @@ use super::parser::parse_log_line;
 pub struct ParseOptions {
     pub use_cache: bool,
     pub cache_dir: Option<PathBuf>,
+    /// Reference date used to resolve syslog entries that omit the year.
+    /// Defaults to today; tests pin it for deterministic results.
+    pub reference_date: Option<NaiveDate>,
 }
 
 impl Default for ParseOptions {
@@ -21,6 +24,7 @@ impl Default for ParseOptions {
         Self {
             use_cache: true,
             cache_dir: None,
+            reference_date: None,
         }
     }
 }
@@ -86,13 +90,15 @@ pub fn parse_ufw_log_range_with_options(
     })?;
     let reader = std::io::BufReader::new(file);
 
-    let current_year = chrono::Local::now().year();
+    let today = options
+        .reference_date
+        .unwrap_or_else(|| chrono::Local::now().date_naive());
     let mut entries: Vec<LogEntry> = Vec::new();
     let mut all_entries: Vec<LogEntry> = Vec::new();
 
     for line in reader.lines() {
         let line = line?;
-        if let Some((date, _hour, entry)) = parse_log_line(&line, current_year) {
+        if let Some((date, _hour, entry)) = parse_log_line(&line, today) {
             if options.use_cache {
                 all_entries.push(entry.clone());
             }
@@ -232,7 +238,7 @@ mod tests {
         let to = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
         let options = ParseOptions {
             use_cache: false,
-            cache_dir: None,
+            ..ParseOptions::default()
         };
         let result =
             parse_ufw_log_range_with_options(log_path.to_str().unwrap(), from, to, &options);
@@ -261,6 +267,7 @@ mod tests {
         let options = ParseOptions {
             use_cache: true,
             cache_dir: Some(dir.path().join("cache")),
+            ..ParseOptions::default()
         };
         let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
         let to_june = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
@@ -290,6 +297,7 @@ mod tests {
         let options = ParseOptions {
             use_cache: false,
             cache_dir: Some(cache_dir.clone()),
+            ..ParseOptions::default()
         };
         let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
         let to = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();

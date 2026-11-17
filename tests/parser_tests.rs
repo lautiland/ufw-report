@@ -2,8 +2,12 @@ use chrono::NaiveDate;
 use ufw_report::core::parser;
 use ufw_report::models::Direction;
 
+fn today() -> NaiveDate {
+    NaiveDate::from_ymd_opt(2026, 7, 10).unwrap()
+}
+
 fn pl(line: &str) -> Option<(NaiveDate, u32, ufw_report::models::LogEntry)> {
-    parser::parse_log_line_standalone(line, 2026)
+    parser::parse_log_line_standalone(line, today())
 }
 
 #[test]

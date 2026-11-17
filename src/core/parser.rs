@@ -43,11 +43,11 @@ fn parse_syslog_month(abbr: &str) -> Option<u32> {
     }
 }
 
-pub(crate) fn resolve_year(parsed_date: NaiveDate, current_year: i32) -> NaiveDate {
-    let candidate = NaiveDate::from_ymd_opt(current_year, parsed_date.month(), parsed_date.day());
+pub(crate) fn resolve_year(parsed_date: NaiveDate, today: NaiveDate) -> NaiveDate {
+    let candidate = NaiveDate::from_ymd_opt(today.year(), parsed_date.month(), parsed_date.day());
     match candidate {
-        Some(d) if d > chrono::Local::now().date_naive() + chrono::TimeDelta::days(30) => {
-            NaiveDate::from_ymd_opt(current_year - 1, parsed_date.month(), parsed_date.day())
+        Some(d) if d > today + chrono::TimeDelta::days(30) => {
+            NaiveDate::from_ymd_opt(today.year() - 1, parsed_date.month(), parsed_date.day())
                 .unwrap_or(parsed_date)
         }
         Some(d) => d,
@@ -87,7 +87,7 @@ fn parse_direction(line: &str) -> Direction {
     }
 }
 
-pub(crate) fn parse_log_line(line: &str, current_year: i32) -> Option<(NaiveDate, u32, LogEntry)> {
+pub(crate) fn parse_log_line(line: &str, today: NaiveDate) -> Option<(NaiveDate, u32, LogEntry)> {
     let line = line.trim();
     if !line.contains("[UFW BLOCK]") {
         return None;
@@ -109,8 +109,8 @@ pub(crate) fn parse_log_line(line: &str, current_year: i32) -> Option<(NaiveDate
         let month = parse_syslog_month(month_abbr)?;
         let day: u32 = day_str.parse().ok()?;
 
-        let d = NaiveDate::from_ymd_opt(current_year, month, day)?;
-        let resolved = resolve_year(d, current_year);
+        let d = NaiveDate::from_ymd_opt(today.year(), month, day)?;
+        let resolved = resolve_year(d, today);
         (resolved, h)
     };
 
@@ -152,19 +152,23 @@ pub(crate) fn parse_log_line(line: &str, current_year: i32) -> Option<(NaiveDate
 #[must_use]
 pub fn parse_log_line_standalone(
     line: &str,
-    current_year: i32,
+    today: NaiveDate,
 ) -> Option<(NaiveDate, u32, LogEntry)> {
-    parse_log_line(line, current_year)
+    parse_log_line(line, today)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn today() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 7, 10).unwrap()
+    }
+
     #[test]
     fn test_parse_ipv4_syslog() {
         let line = "Jun 29 01:23:45 hostname kernel: [UFW BLOCK] IN=eth0 SRC=192.168.1.1 DST=10.0.0.1 PROTO=TCP SPT=54321 DPT=22";
-        let result = parse_log_line(line, 2026);
+        let result = parse_log_line(line, today());
         assert!(result.is_some());
         let (date, hour, entry) = result.unwrap();
         assert_eq!(date.to_string(), "2026-06-29");
@@ -177,7 +181,7 @@ mod tests {
     #[test]
     fn test_parse_ipv6_iso() {
         let line = "2026-06-29T14:30:00 hostname kernel: [UFW BLOCK] IN=eth0 SRC=2001:db8::1 DST=::1 PROTO=UDP SPT=123 DPT=53";
-        let result = parse_log_line(line, 2026);
+        let result = parse_log_line(line, today());
         assert!(result.is_some());
         let (date, hour, entry) = result.unwrap();
         assert_eq!(date.to_string(), "2026-06-29");
@@ -190,19 +194,19 @@ mod tests {
     #[test]
     fn test_skip_non_block() {
         let line = "Jun 29 01:23:45 hostname kernel: [UFW ALLOW] IN=eth0 SRC=1.2.3.4 DST=10.0.0.1 PROTO=TCP SPT=80 DPT=8080";
-        assert!(parse_log_line(line, 2026).is_none());
+        assert!(parse_log_line(line, today()).is_none());
     }
 
     #[test]
     fn test_skip_no_src() {
         let line = "Jun 29 01:23:45 hostname kernel: [UFW BLOCK] IN=eth0";
-        assert!(parse_log_line(line, 2026).is_none());
+        assert!(parse_log_line(line, today()).is_none());
     }
 
     #[test]
     fn test_parse_minimal_fields() {
         let line = "Jul  4 08:05:00 hostname kernel: [UFW BLOCK] SRC=10.0.0.1";
-        let result = parse_log_line(line, 2026);
+        let result = parse_log_line(line, today());
         assert!(result.is_some());
         let (_date, _hour, entry) = result.unwrap();
         assert_eq!(entry.src_ip, "10.0.0.1");
@@ -213,7 +217,7 @@ mod tests {
     #[test]
     fn test_hour_extraction() {
         let line = "2026-06-29T23:59:59 hostname kernel: [UFW BLOCK] SRC=10.0.0.1";
-        let result = parse_log_line(line, 2026);
+        let result = parse_log_line(line, today());
         assert!(result.is_some());
         let (_date, hour, _entry) = result.unwrap();
         assert_eq!(hour, 23);
@@ -222,7 +226,7 @@ mod tests {
     #[test]
     fn test_syslog_single_digit_day() {
         let line = "Jul  4 08:05:00 hostname kernel: [UFW BLOCK] SRC=10.0.0.1 DPT=22 PROTO=TCP";
-        let result = parse_log_line(line, 2026);
+        let result = parse_log_line(line, today());
         assert!(result.is_some());
         let (date, hour, entry) = result.unwrap();
         assert_eq!(date.to_string(), "2026-07-04");
@@ -233,7 +237,7 @@ mod tests {
     #[test]
     fn test_fields_reordered() {
         let line = "Jun 29 01:23:45 hostname kernel: [UFW BLOCK] SRC=10.0.0.1 PROTO=TCP DPT=443";
-        let result = parse_log_line(line, 2026);
+        let result = parse_log_line(line, today());
         assert!(result.is_some());
         let (_date, _hour, entry) = result.unwrap();
         assert_eq!(entry.dst_port, Some(443));
@@ -244,7 +248,7 @@ mod tests {
     fn test_resolve_year_rollover() {
         let today = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
         let dec_log = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
-        let resolved = resolve_year(dec_log, today.year());
+        let resolved = resolve_year(dec_log, today);
         assert_eq!(resolved.year(), 2025);
         assert_eq!(resolved, dec_log);
     }
@@ -253,7 +257,23 @@ mod tests {
     fn test_resolve_year_normal() {
         let today = NaiveDate::from_ymd_opt(2026, 6, 29).unwrap();
         let jun_log = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
-        let resolved = resolve_year(jun_log, today.year());
+        let resolved = resolve_year(jun_log, today);
         assert_eq!(resolved, jun_log);
+    }
+
+    #[test]
+    fn test_resolve_year_keeps_late_december_in_current_year() {
+        let today = NaiveDate::from_ymd_opt(2026, 12, 15).unwrap();
+        let dec_log = NaiveDate::from_ymd_opt(2026, 12, 31).unwrap();
+        let resolved = resolve_year(dec_log, today);
+        assert_eq!(resolved, dec_log);
+    }
+
+    #[test]
+    fn test_resolve_year_january_reads_previous_june() {
+        let today = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+        let jun_log = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+        let resolved = resolve_year(jun_log, today);
+        assert_eq!(resolved, NaiveDate::from_ymd_opt(2025, 6, 15).unwrap());
     }
 }
