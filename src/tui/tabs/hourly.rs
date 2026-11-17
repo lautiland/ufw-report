@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
 };
 
-use super::daily::{build_hourly_bars, to_u16_clamped};
+use crate::tui::widgets::bar_chart::{build_hourly_bars, to_u16_clamped};
 
 use crate::tui::app::App;
 
@@ -67,8 +67,8 @@ pub(crate) fn render_hourly(frame: &mut Frame, area: Rect, app: &App) {
         .block(
             Block::default()
                 .title(format!(
-                    " Hourly: {}  (↑↓ hour {:02}:00, ←→ day) ",
-                    day.date, effective_hour
+                    " Hourly: {} at {effective_hour:02}:00  (←→ day, ↑↓ hour, PgUp/PgDn logs) ",
+                    day.date
                 ))
                 .borders(Borders::ALL),
         )

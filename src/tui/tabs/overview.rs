@@ -17,55 +17,48 @@ pub(crate) fn render_summary_cards(frame: &mut Frame, area: Rect, data: &Aggrega
     ]);
     let [total_area, incoming_area, outgoing_area, uniq_ip_area] = card_layout.areas(area);
 
-    let total_card = Paragraph::new(Line::from(vec![
-        Span::raw("Total Blocked"),
-        Span::raw(" ".repeat(5)),
-        Span::styled(
-            format!("{}", data.total_blocked),
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]))
-    .block(Block::default().borders(Borders::ALL));
+    let total_card = Paragraph::new(Line::from(Span::styled(
+        format!("{}", data.total_blocked),
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    )))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Total Blocked "),
+    );
     frame.render_widget(total_card, total_area);
 
-    let in_card = Paragraph::new(Line::from(vec![
-        Span::raw("Incoming"),
-        Span::raw(" ".repeat(9)),
-        Span::styled(
-            format!("{}", data.total_incoming),
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]))
-    .block(Block::default().borders(Borders::ALL));
+    let in_card = Paragraph::new(Line::from(Span::styled(
+        format!("{}", data.total_incoming),
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
+    )))
+    .block(Block::default().borders(Borders::ALL).title(" Incoming "));
     frame.render_widget(in_card, incoming_area);
 
-    let out_card = Paragraph::new(Line::from(vec![
-        Span::raw("Outgoing"),
-        Span::raw(" ".repeat(9)),
-        Span::styled(
-            format!("{}", data.total_outgoing),
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        ),
-    ]))
-    .block(Block::default().borders(Borders::ALL));
+    let out_card = Paragraph::new(Line::from(Span::styled(
+        format!("{}", data.total_outgoing),
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+    )))
+    .block(Block::default().borders(Borders::ALL).title(" Outgoing "));
     frame.render_widget(out_card, outgoing_area);
 
-    let unique = format!("IPv4: {} | IPv6: {}", data.top_ips.len(), 0);
-    let unique_card = Paragraph::new(Line::from(vec![
-        Span::raw("Unique IPs"),
-        Span::raw(" ".repeat(7)),
-        Span::styled(
-            unique,
+    let unique_card = Paragraph::new(vec![
+        Line::from(Span::styled(
+            format!("{} total", data.unique_src_ips),
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
-        ),
-    ]))
-    .block(Block::default().borders(Borders::ALL));
+        )),
+        Line::from(format!(
+            "v4 {} | v6 {}",
+            data.unique_src_ips_v4, data.unique_src_ips_v6
+        )),
+    ])
+    .block(Block::default().borders(Borders::ALL).title(" Unique IPs "));
     frame.render_widget(unique_card, uniq_ip_area);
 }
 
@@ -73,17 +66,37 @@ fn to_u16_clamped(v: usize) -> u16 {
     u16::try_from(v).unwrap_or(u16::MAX)
 }
 
-pub(crate) fn render_protocol_gauges(frame: &mut Frame, area: Rect, data: &AggregatedData) {
+pub(crate) fn render_protocol_gauges(
+    frame: &mut Frame,
+    area: Rect,
+    data: &AggregatedData,
+    scroll: usize,
+) {
     let proto_total: u64 = data.protocols.values().sum();
     let mut sorted_protos: Vec<(&String, &u64)> = data.protocols.iter().collect();
     sorted_protos.sort_by(|a, b| b.1.cmp(a.1));
 
-    let proto_block = Block::default().title(" Protocols ").borders(Borders::ALL);
-    let proto_inner = proto_block.inner(area);
-    frame.render_widget(proto_block, area);
-
+    let proto_inner = Block::default().borders(Borders::ALL).inner(area);
     let gauge_height = usize::from(proto_inner.height);
-    let visible_protos: Vec<_> = sorted_protos.iter().take(gauge_height).collect();
+    let max_offset = sorted_protos.len().saturating_sub(gauge_height);
+    let offset = scroll.min(max_offset);
+    let visible_protos: Vec<_> = sorted_protos
+        .iter()
+        .skip(offset)
+        .take(gauge_height)
+        .collect();
+
+    let title = if sorted_protos.len() > gauge_height && gauge_height > 0 {
+        format!(
+            " Protocols {}-{} of {} ",
+            offset + 1,
+            offset + visible_protos.len(),
+            sorted_protos.len()
+        )
+    } else {
+        " Protocols ".to_string()
+    };
+    frame.render_widget(Block::default().title(title).borders(Borders::ALL), area);
 
     for (i, (proto, count)) in visible_protos.iter().enumerate() {
         let pct = count
@@ -174,16 +187,16 @@ pub(crate) fn render_top_tables(frame: &mut Frame, area: Rect, data: &Aggregated
     frame.render_widget(ports_table, ports_table_area);
 }
 
-pub(crate) fn render_overview(frame: &mut Frame, area: Rect, data: &AggregatedData) {
+pub(crate) fn render_overview(frame: &mut Frame, area: Rect, data: &AggregatedData, scroll: usize) {
     let chunks = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Length(3),
+        Constraint::Length(4),
+        Constraint::Length(5),
         Constraint::Min(0),
     ])
     .areas::<3>(area);
     let [cards_area, proto_area, tables_area] = chunks;
 
     render_summary_cards(frame, cards_area, data);
-    render_protocol_gauges(frame, proto_area, data);
+    render_protocol_gauges(frame, proto_area, data, scroll);
     render_top_tables(frame, tables_area, data);
 }

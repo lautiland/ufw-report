@@ -3,6 +3,7 @@ pub mod tabs;
 pub mod widgets;
 
 use std::io;
+use std::sync::{Arc, Mutex};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{
@@ -21,9 +22,9 @@ use ratatui::{
 
 use crate::models::{AggregatedData, LogEntry};
 
-use self::app::App;
+use self::app::{App, Tab};
 
-const TAB_TITLES: &[&str] = &[" Overview ", " Daily ", " Hourly ", " Raw "];
+type PanicHook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'static>;
 
 fn restore_terminal() {
     let _ = disable_raw_mode();
@@ -34,13 +35,26 @@ fn restore_terminal() {
 ///
 /// Returns an error if the terminal cannot be initialized or events fail to read.
 pub fn run_tui(data: AggregatedData, entries: Vec<LogEntry>) -> anyhow::Result<()> {
-    let original_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |panic| {
+    let original_hook: Arc<Mutex<Option<PanicHook>>> =
+        Arc::new(Mutex::new(Some(std::panic::take_hook())));
+    let hook_for_panic = Arc::clone(&original_hook);
+    std::panic::set_hook(Box::new(move |panic_info| {
         restore_terminal();
-        original_hook(panic);
+        if let Ok(guard) = hook_for_panic.lock() {
+            if let Some(hook) = guard.as_ref() {
+                hook(panic_info);
+            }
+        }
     }));
 
     let result = run_tui_inner(data, entries);
+
+    let _ = std::panic::take_hook();
+    if let Ok(mut guard) = original_hook.lock() {
+        if let Some(hook) = guard.take() {
+            std::panic::set_hook(hook);
+        }
+    }
 
     if result.is_err() {
         restore_terminal();
@@ -68,80 +82,91 @@ fn run_tui_inner(data: AggregatedData, entries: Vec<LogEntry>) -> anyhow::Result
     Ok(())
 }
 
-fn handle_left_key(app: &mut App) {
-    match app.current_tab {
-        1 if !app.data.days.is_empty() => {
-            let last = app.data.days.len().saturating_sub(1);
-            let idx = app.selected_day_index.unwrap_or(last);
-            if let Some(prev) = App::prev_day_with_data(&app.data.days, idx) {
-                app.selected_day_index = Some(prev);
-            }
-        }
-        2 if !app.data.days.is_empty() => {
-            let last = app.data.days.len().saturating_sub(1);
-            let idx = app.selected_day_index.unwrap_or(last).min(last);
-            let day = &app.data.days[idx];
-            let default_h = App::last_hour_for_day(day).unwrap_or(0);
-            let h = app.selected_hour.unwrap_or(default_h);
-            if let Some(prev_h) = App::prev_hour_with_data(day, h) {
-                app.selected_hour = Some(prev_h);
-            } else if let Some(prev) = App::prev_day_with_data(&app.data.days, idx) {
-                app.selected_day_index = Some(prev);
-                app.selected_hour = App::last_hour_for_day(&app.data.days[prev]);
-            }
-            app.hourly_scroll = 0;
-        }
-        _ => {}
+fn set_tab(app: &mut App, tab: Tab) {
+    if app.current_tab != tab {
+        app.current_tab = tab;
+        app.hourly_scroll = 0;
     }
 }
 
-fn handle_right_key(app: &mut App) {
-    match app.current_tab {
-        1 if !app.data.days.is_empty() => {
-            let last = app.data.days.len().saturating_sub(1);
-            let idx = app.selected_day_index.unwrap_or(last);
-            if let Some(next) = App::next_day_with_data(&app.data.days, idx) {
-                app.selected_day_index = Some(next);
-            }
-        }
-        2 if !app.data.days.is_empty() => {
-            let n = app.data.days.len();
-            let last = n.saturating_sub(1);
-            let idx = app.selected_day_index.unwrap_or(last).min(last);
-            let day = &app.data.days[idx];
-            let default_h = App::last_hour_for_day(day).unwrap_or(0);
-            let h = app.selected_hour.unwrap_or(default_h);
-            if let Some(next_h) = App::next_hour_with_data(day, h) {
-                app.selected_hour = Some(next_h);
-            } else if let Some(next) = App::next_day_with_data(&app.data.days, idx) {
-                app.selected_day_index = Some(next);
-                let next_day = &app.data.days[next];
-                app.selected_hour = next_day
-                    .hourly
-                    .iter()
-                    .filter(|hb| hb.count > 0)
-                    .min_by_key(|hb| hb.hour)
-                    .map(|hb| hb.hour);
-            }
-            app.hourly_scroll = 0;
-        }
-        _ => {}
+fn current_day_index(app: &App) -> Option<usize> {
+    if app.data.days.is_empty() {
+        return None;
     }
+    let last = app.data.days.len() - 1;
+    Some(app.selected_day_index.unwrap_or(last).min(last))
 }
 
-fn handle_scroll(app: &mut App, step: usize, direction: i8) {
-    let apply = |current: usize, delta: i8| -> usize {
-        if delta > 0 {
-            current.saturating_add(step)
-        } else {
-            current.saturating_sub(step)
-        }
+fn move_day(app: &mut App, forward: bool) {
+    let Some(idx) = current_day_index(app) else {
+        return;
     };
+    let target = if forward {
+        App::next_day_with_data(&app.data.days, idx)
+    } else {
+        App::prev_day_with_data(&app.data.days, idx)
+    };
+    let Some(target) = target else {
+        return;
+    };
+    app.selected_day_index = Some(target);
+    app.selected_hour = App::last_hour_for_day(&app.data.days[target]);
+    app.hourly_scroll = 0;
+}
+
+fn move_hour(app: &mut App, forward: bool) {
+    let Some(idx) = current_day_index(app) else {
+        return;
+    };
+    let day = &app.data.days[idx];
+    let current = app
+        .selected_hour
+        .or_else(|| App::last_hour_for_day(day))
+        .unwrap_or(0)
+        .min(23);
+    let target = if forward {
+        App::next_hour_with_data(day, current)
+    } else {
+        App::prev_hour_with_data(day, current)
+    };
+    if let Some(hour) = target {
+        app.selected_day_index = Some(idx);
+        app.selected_hour = Some(hour);
+        app.hourly_scroll = 0;
+    }
+}
+
+fn apply_scroll(current: usize, step: usize, direction: i8) -> usize {
+    if direction > 0 {
+        current.saturating_add(step)
+    } else {
+        current.saturating_sub(step)
+    }
+}
+
+fn overview_scroll_limit(app: &App) -> usize {
+    app.data.protocols.len().saturating_sub(1)
+}
+
+fn handle_vertical(app: &mut App, step: usize, direction: i8) {
     match app.current_tab {
-        0 => app.scroll = apply(app.scroll, direction),
-        2 => app.hourly_scroll = apply(app.hourly_scroll, direction),
-        3 => app.raw_scroll = apply(app.raw_scroll, direction),
-        _ => {}
+        Tab::Overview => {
+            app.scroll = apply_scroll(app.scroll, step, direction).min(overview_scroll_limit(app));
+        }
+        Tab::Hourly => move_hour(app, direction > 0),
+        Tab::Raw => app.raw_scroll = apply_scroll(app.raw_scroll, step, direction),
+        Tab::Daily => {}
+    }
+}
+
+fn handle_page(app: &mut App, step: usize, direction: i8) {
+    match app.current_tab {
+        Tab::Overview => {
+            app.scroll = apply_scroll(app.scroll, step, direction).min(overview_scroll_limit(app));
+        }
+        Tab::Hourly => app.hourly_scroll = apply_scroll(app.hourly_scroll, step, direction),
+        Tab::Raw => app.raw_scroll = apply_scroll(app.raw_scroll, step, direction),
+        Tab::Daily => {}
     }
 }
 
@@ -152,21 +177,29 @@ fn handle_events(app: &mut App) -> io::Result<()> {
         }
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => app.running = false,
-            KeyCode::Char('1') => app.current_tab = 0,
-            KeyCode::Char('2') => app.current_tab = 1,
-            KeyCode::Char('3') => app.current_tab = 2,
-            KeyCode::Char('4') => app.current_tab = 3,
-            KeyCode::Tab => app.current_tab = (app.current_tab + 1) % 4,
-            KeyCode::BackTab => app.current_tab = (app.current_tab + 3) % 4,
-            KeyCode::Left => handle_left_key(app),
-            KeyCode::Right => handle_right_key(app),
+            KeyCode::Char('1') => set_tab(app, Tab::Overview),
+            KeyCode::Char('2') => set_tab(app, Tab::Daily),
+            KeyCode::Char('3') => set_tab(app, Tab::Hourly),
+            KeyCode::Char('4') => set_tab(app, Tab::Raw),
+            KeyCode::Tab => set_tab(app, app.current_tab.next()),
+            KeyCode::BackTab => set_tab(app, app.current_tab.prev()),
+            KeyCode::Left => {
+                if matches!(app.current_tab, Tab::Daily | Tab::Hourly) {
+                    move_day(app, false);
+                }
+            }
+            KeyCode::Right => {
+                if matches!(app.current_tab, Tab::Daily | Tab::Hourly) {
+                    move_day(app, true);
+                }
+            }
             KeyCode::Up => {
                 let step = if key.modifiers.contains(KeyModifiers::SHIFT) {
                     3
                 } else {
                     1
                 };
-                handle_scroll(app, step, -1);
+                handle_vertical(app, step, -1);
             }
             KeyCode::Down => {
                 let step = if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -174,7 +207,7 @@ fn handle_events(app: &mut App) -> io::Result<()> {
                 } else {
                     1
                 };
-                handle_scroll(app, step, 1);
+                handle_vertical(app, step, 1);
             }
             KeyCode::PageUp => {
                 let step = if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -182,7 +215,7 @@ fn handle_events(app: &mut App) -> io::Result<()> {
                 } else {
                     10
                 };
-                handle_scroll(app, step, -1);
+                handle_page(app, step, -1);
             }
             KeyCode::PageDown => {
                 let step = if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -190,15 +223,15 @@ fn handle_events(app: &mut App) -> io::Result<()> {
                 } else {
                     10
                 };
-                handle_scroll(app, step, 1);
+                handle_page(app, step, 1);
             }
-            KeyCode::Enter if app.current_tab == 1 && !app.data.days.is_empty() => {
-                let last = app.data.days.len().saturating_sub(1);
-                let idx = app.selected_day_index.unwrap_or(last).min(last);
-                app.selected_day_index = Some(idx);
-                app.selected_hour = App::last_hour_for_day(&app.data.days[idx]);
-                app.hourly_scroll = 0;
-                app.current_tab = 2;
+            KeyCode::Enter if app.current_tab == Tab::Daily && !app.data.days.is_empty() => {
+                if let Some(idx) = current_day_index(app) {
+                    app.selected_day_index = Some(idx);
+                    app.selected_hour = App::last_hour_for_day(&app.data.days[idx]);
+                    app.hourly_scroll = 0;
+                    set_tab(app, Tab::Hourly);
+                }
             }
             _ => {}
         }
@@ -217,16 +250,16 @@ fn ui(frame: &mut Frame, app: &mut App) {
 
     render_header(frame, header_area, app);
     match app.current_tab {
-        0 => tabs::overview::render_overview(frame, content_area, &app.data),
-        1 => {
-            let effective_idx = app
-                .selected_day_index
-                .unwrap_or(app.data.days.len().saturating_sub(1));
-            tabs::daily_view::render_daily(frame, content_area, &app.data, effective_idx);
+        Tab::Overview => {
+            tabs::overview::render_overview(frame, content_area, &app.data, app.scroll);
         }
-        2 => tabs::hourly::render_hourly(frame, content_area, app),
-        3 => tabs::raw::render_raw(frame, content_area, &app.entries, app.raw_scroll),
-        _ => {}
+        Tab::Daily => {
+            let last = app.data.days.len().saturating_sub(1);
+            let effective_idx = app.selected_day_index.unwrap_or(last).min(last);
+            tabs::daily::render_daily(frame, content_area, &app.data, effective_idx);
+        }
+        Tab::Hourly => tabs::hourly::render_hourly(frame, content_area, app),
+        Tab::Raw => tabs::raw::render_raw(frame, content_area, &app.entries, app.raw_scroll),
     }
     render_status(frame, status_area, app);
 }
@@ -241,8 +274,8 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     );
 
     let mut tab_spans = vec![title];
-    for (i, tab) in TAB_TITLES.iter().enumerate() {
-        let style = if i == app.current_tab {
+    for tab in Tab::ALL {
+        let style = if tab == app.current_tab {
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::LightYellow)
@@ -250,26 +283,21 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         } else {
             Style::default().fg(Color::White).bg(Color::DarkGray)
         };
-        let prefix = if i > 0 { " " } else { "" };
-        tab_spans.push(Span::styled(format!("{prefix}{tab}"), style));
+        tab_spans.push(Span::styled(format!(" {} ", tab.title()), style));
     }
 
     let header = Paragraph::new(Line::from(tab_spans));
     frame.render_widget(header, area);
 }
 
-fn render_status(frame: &mut Frame, area: Rect, _app: &App) {
+fn render_status(frame: &mut Frame, area: Rect, app: &App) {
     let text = Line::from(vec![
         Span::styled("[Tab]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Tab "),
-        Span::styled("[←→]", Style::default().fg(Color::Cyan)),
-        Span::raw("Day/Hour "),
-        Span::styled("[↑↓]", Style::default().fg(Color::Cyan)),
-        Span::raw("Scroll "),
-        Span::styled("[Enter]", Style::default().fg(Color::Cyan)),
-        Span::raw("Hourly "),
+        Span::raw(" Switch "),
+        Span::raw(app.current_tab.hint()),
+        Span::raw("  "),
         Span::styled("[q]", Style::default().fg(Color::Cyan)),
-        Span::raw("Quit"),
+        Span::raw(" Quit"),
     ]);
     let status = Paragraph::new(text).style(Style::default().bg(Color::DarkGray).fg(Color::White));
     frame.render_widget(status, area);
