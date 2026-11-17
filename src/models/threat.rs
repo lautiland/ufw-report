@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::{ParseStats, PortEntry};
 
 /// Threat categories produced by the offline heuristics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ThreatKind {
     PortScan,
     HostSweep,
