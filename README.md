@@ -1,6 +1,6 @@
 # ufw-report
 
-A Rust CLI that reads UFW logs, analyzes blocked traffic, and presents an interactive terminal report (TUI). It can also export the parsed entries to CSV or JSON.
+A Rust CLI that reads UFW logs, analyzes blocked traffic, and presents an interactive terminal report (TUI). It detects attacker profiles, subnets, scans, and brute-force bursts, and can export the parsed entries to CSV or JSON or the threat findings to JSON or Markdown.
 
 ## What it is
 
@@ -48,6 +48,13 @@ ufw-report -o report.json
 # Export JSON to stdout (pipeable)
 ufw-report -o -
 
+# Export threat findings as JSON or Markdown
+ufw-report --findings findings.json
+ufw-report --findings findings.md
+
+# Use an explicit analysis config file
+ufw-report --config analysis.toml
+
 # Disable the parse cache
 ufw-report --no-cache
 ```
@@ -63,6 +70,73 @@ The format is resolved in one place and never inferred silently:
 - `-o report.json`: JSON.
 - `-o report` (no extension): JSON.
 - `-o -`: CSV with `--csv`, JSON otherwise.
+
+## Threat analysis
+
+The analysis is offline and read-only. It never runs `ufw`, opens network
+connections, or changes firewall rules.
+
+For every source IP, `ufw-report` builds a profile with volume, first/last
+seen, active days, distinct destination ports and hosts, administrative port
+hits, and top ports/protocols. Profiles receive a 0-100 risk score built from
+capped volume, port diversity, administrative hits, persistence, and findings.
+Severity bands are Low (0-24), Medium (25-49), High (50-74), and Critical
+(75-100).
+
+The heuristics use one-hour buckets:
+
+- **Port scan** — at least `scan_ports_per_hour` distinct destination ports
+  from one source in one hour.
+- **Host sweep** — at least `scan_hosts_per_hour` distinct destination hosts
+  from one source in one hour.
+- **Brute force** — at least `bruteforce_attempts_per_hour` attempts against
+  administrative ports in one hour, or `bruteforce_attempts_per_day` in one
+  day.
+- **Distributed brute force** — at least `distributed_sources_per_hour`
+  distinct sources against the same host and port in one hour.
+- **Persistent source** — at least `persistence_min_days` active days and
+  `persistence_min_blocks` blocks.
+
+Sources are also grouped by IPv4 `/24` and IPv6 `/64` prefixes. The coverage
+section reports how many hours in the requested range had data, the longest gap,
+and parser counters such as unparsed block lines, out-of-order lines, and
+future-dated entries, so "no findings" can be told apart from "no usable log".
+
+CIDRs in `allowlist.cidrs` are excluded from findings and risk scores, but not
+from the raw data or coverage counters. Profiles below `min_score` are left out
+of the ranking; findings are kept even when their source falls below it.
+
+### Configuration
+
+Analysis thresholds use built-in defaults and are only loaded from an explicit
+`--config <PATH>` file (automatic discovery is intentionally not supported).
+Every section and key is optional. A complete example lives in
+[`docs/analysis-config.example.toml`](docs/analysis-config.example.toml).
+
+```toml
+[thresholds]
+scan_ports_per_hour = 10
+min_score = 25
+
+[allowlist]
+cidrs = ["192.0.2.0/24"]
+
+[scoring]
+finding_weight = 10
+```
+
+### Findings export
+
+`--findings <PATH>` writes the full report (summary, coverage, findings,
+profiles, and network groups):
+
+- Paths ending in `.md` produce Markdown.
+- Any other path produces pretty-printed JSON.
+- `-` writes to stdout.
+- `--findings -` and `-o -` cannot be used together.
+
+When `--findings` is used the tool writes the file and exits, unless an entry
+export (`--csv` or `-o`) is also requested, in which case both files are written.
 
 ## Cache
 
@@ -84,20 +158,25 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
 - Configurable date range (default: last 7 days)
 - Zero-filled days with no data
 - Range-safe JSON parse cache
-- Four TUI views: Overview, Daily, Hourly, and Raw
+- Threat analysis: attacker profiles, subnet groups, scan and brute-force heuristics
+- 0-100 risk score with Low/Medium/High/Critical bands
+- Log coverage and parser quality counters
+- Five TUI views: Overview, Daily, Hourly, Raw, and Threats
 - CSV and JSON export, including stdout pipelines
+- JSON and Markdown findings export
 
 ## TUI controls
 
 | Key | Action |
 |-----|--------|
-| `1`-`4` | Switch to Overview, Daily, Hourly, or Raw |
+| `1`-`5` | Switch to Overview, Daily, Hourly, Raw, or Threats |
 | `Tab` / `Shift+Tab` | Next / previous tab |
 | `←` `→` | Previous / next day (Daily and Hourly) |
-| `↑` `↓` | Scroll protocols (Overview), previous / next hour (Hourly), scroll rows (Raw) |
-| `Shift+↑` `Shift+↓` | Fast scroll in Overview and Raw |
-| `PgUp` `PgDn` | Page scroll in Overview, Raw, and the Hourly log table |
+| `↑` `↓` | Scroll protocols (Overview), previous / next hour (Hourly), scroll rows (Raw), select a row (Threats) |
+| `Shift+↑` `Shift+↓` | Fast scroll in Overview, Raw, and Threats |
+| `PgUp` `PgDn` | Page scroll in Overview, Raw, the Hourly log table, and Threats |
 | `Shift+PgUp` `Shift+PgDn` | Fast page scroll |
+| `v` | Toggle Sources / Networks in Threats |
 | `Enter` | Open the selected day in Hourly |
 | `q` / `Esc` | Quit |
 
@@ -107,7 +186,7 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
 cargo test
 ```
 
-The suite covers the parser, date range handling, cache invalidation, aggregation, output formats, CLI behavior, and TUI navigation.
+The suite covers the parser, date range handling, cache invalidation, aggregation, output formats, threat heuristics, findings export, CLI behavior, and TUI navigation.
 
 ## License
 

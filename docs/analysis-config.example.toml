@@ -1,0 +1,50 @@
+# Example analysis configuration for ufw-report.
+#
+# Load it explicitly:
+#
+#   ufw-report --config docs/analysis-config.example.toml
+#
+# Every section and key is optional. Values omitted here keep their built-in
+# defaults, so this file can also serve as a reference.
+
+[thresholds]
+# Distinct destination ports from one source in one hour.
+scan_ports_per_hour = 10
+# Distinct destination hosts from one source in one hour.
+scan_hosts_per_hour = 10
+# Administrative-port attempts from one source in one hour.
+bruteforce_attempts_per_hour = 20
+# Administrative-port attempts from one source in one day.
+bruteforce_attempts_per_day = 50
+# Distinct sources against the same host and port in one hour.
+distributed_sources_per_hour = 20
+# Minimum active days for a persistent-source finding.
+persistence_min_days = 3
+# Minimum blocked attempts for a persistent-source finding.
+persistence_min_blocks = 20
+# Minimum distinct sources for a network group to be reported.
+subnet_min_sources = 5
+# Profiles below this 0-100 score are left out of the ranking.
+min_score = 25
+
+[subnets]
+ipv4_prefix = 24
+ipv6_prefix = 64
+
+[ports]
+admin = [
+  21, 22, 23, 25, 53, 110, 143, 389, 445, 1433, 3306, 3389, 5432, 5900,
+  6379, 8080, 8443, 9200, 11211, 27017,
+]
+
+[allowlist]
+# CIDRs excluded from findings and risk scores. Raw data and coverage still
+# include them.
+cidrs = ["192.0.2.0/24", "2001:db8::/32"]
+
+[scoring]
+volume_weight = 8
+ports_weight = 2
+admin_weight = 1
+persistence_weight = 3
+finding_weight = 10
