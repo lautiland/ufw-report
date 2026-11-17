@@ -1,9 +1,11 @@
 use std::path::Path;
 
 pub mod csv;
+pub mod findings;
 pub mod json;
 
 pub use csv::write_csv;
+pub use findings::{render_markdown, write_findings, FindingsFormat};
 pub use json::{write_json, write_output};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

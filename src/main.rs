@@ -7,7 +7,7 @@ use ufw_report::core::{self, ParseOptions};
 use ufw_report::error::UfwError;
 use ufw_report::logging;
 use ufw_report::models::build_aggregated;
-use ufw_report::output::{self, OutputFormat};
+use ufw_report::output::{self, FindingsFormat, OutputFormat};
 use ufw_report::threat::config::AnalysisConfig;
 
 fn main() -> anyhow::Result<()> {
@@ -18,6 +18,13 @@ fn main() -> anyhow::Result<()> {
     let config = AppConfig::from_cli(&args)?;
     let output_format = OutputFormat::resolve(config.csv_mode, config.output.as_deref())?;
     let analysis_config = AnalysisConfig::load(config.config_path.as_deref())?;
+
+    if let (Some(findings), Some(output)) = (config.findings.as_deref(), config.output.as_deref()) {
+        anyhow::ensure!(
+            !(findings == "-" && output == "-"),
+            "--findings - and -o - cannot both write to stdout"
+        );
+    }
 
     eprintln!(
         "Analyzing UFW logs ({} → {})... ",
@@ -51,6 +58,29 @@ fn main() -> anyhow::Result<()> {
     let day_count = parse_result.reports.len();
     eprintln!("{entry_count} entries, {day_count} days");
 
+    let findings_format = config.findings.as_deref().map(FindingsFormat::resolve);
+    let needs_analysis = findings_format.is_some() || output_format.is_none();
+    let threat = if needs_analysis {
+        Some(ufw_report::threat::analyze(
+            &parse_result.all_entries,
+            config.from_date,
+            config.to_date,
+            parse_result.stats,
+            &analysis_config,
+        )?)
+    } else {
+        None
+    };
+
+    if let (Some(path), Some(format), Some(report)) =
+        (config.findings.as_deref(), findings_format, threat.as_ref())
+    {
+        output::write_findings(report, path, format)?;
+        if output_format.is_none() {
+            return Ok(());
+        }
+    }
+
     if let Some(format) = output_format {
         let path = config.output.as_deref().unwrap_or("-");
         output::write_output(&parse_result.all_entries, path, format)?;
@@ -64,13 +94,9 @@ fn main() -> anyhow::Result<()> {
     }
 
     let aggregated = build_aggregated(parse_result.reports, &parse_result.all_entries);
-    let threat = ufw_report::threat::analyze(
-        &parse_result.all_entries,
-        config.from_date,
-        config.to_date,
-        parse_result.stats,
-        &analysis_config,
-    )?;
+    let Some(threat) = threat else {
+        anyhow::bail!("internal error: threat analysis was not computed");
+    };
     ufw_report::tui::run_tui(aggregated, parse_result.all_entries, threat)?;
 
     Ok(())
