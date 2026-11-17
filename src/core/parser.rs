@@ -97,7 +97,8 @@ pub(crate) fn parse_log_line(line: &str, current_year: i32) -> Option<(NaiveDate
         let d = NaiveDate::parse_from_str(caps.get(1)?.as_str(), "%Y-%m-%d").ok()?;
         let h: u32 = caps.get(2)?.as_str().parse().ok()?;
         (d, h)
-    } else if let Some(caps) = RE_SYSLOG_DATE.captures(line) {
+    } else {
+        let caps = RE_SYSLOG_DATE.captures(line)?;
         let date_part = caps.get(1)?.as_str();
         let time_part = caps.get(2)?.as_str();
         let h: u32 = time_part[..2].parse().ok()?;
@@ -111,8 +112,6 @@ pub(crate) fn parse_log_line(line: &str, current_year: i32) -> Option<(NaiveDate
         let d = NaiveDate::from_ymd_opt(current_year, month, day)?;
         let resolved = resolve_year(d, current_year);
         (resolved, h)
-    } else {
-        return None;
     };
 
     let src_ip = RE_SRC.captures(line)?.get(1)?.as_str().to_string();
