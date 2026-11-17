@@ -1,53 +1,49 @@
-### **Planilla de Riesgos para `ufw-report`**
-Aquí tienes la planilla de riesgos reestructurada en formato de lista anidada para facilitar su lectura:
+### **Risk Register for `ufw-report`**
 
-### **Riesgo 1: Ruptura del parser por cambios en el formato de log**
-* **Categoría:** Técnico
-* **Descripción:** Ruptura del parser por cambios en el formato del log de UFW.
-* **Causas:** Actualizaciones mayores del kernel de Linux, netfilter o UFW que modifiquen la sintaxis de syslog.
-* **Consecuencias:** El TUI muestra datos vacíos, erróneos o la aplicación hace *panic* al no poder hacer match con las Regex.
-* **Probabilidad:** Baja
-* **Impacto:** Crítico
-* **Umbral (Trigger):** Reporte de *Issue* en GitHub de usuarios con Ubuntu >= 26.04.
-* **Plan de Respuesta (Mitigación):** Mantener una suite de tests robusta con muestras de logs de múltiples versiones de distribuciones.
-* **Plan de Contingencia:** Lanzar un *hotfix* degradando gracefully: alertar al usuario del formato desconocido en lugar de crashear.
-* **Observaciones:** El riesgo aumenta si se añaden distribuciones no basadas en Debian.
+### **Risk 1: Parser breakage due to log format changes**
+* **Category:** Technical
+* **Description:** Parser breakage caused by changes in the UFW log format.
+* **Causes:** Major Linux kernel, netfilter, or UFW updates that change the syslog syntax.
+* **Consequences:** The TUI shows empty or incorrect data, or the application panics because a regex no longer matches.
+* **Probability:** Low
+* **Impact:** Critical
+* **Trigger:** GitHub issue reports from users on Ubuntu >= 26.04.
+* **Response Plan (Mitigation):** Maintain a robust test suite with log samples from multiple distribution versions.
+* **Contingency Plan:** Release a hotfix that degrades gracefully: warn the user about an unknown format instead of crashing.
+* **Notes:** The risk increases if non-Debian distributions are added.
 
+### **Risk 2: TUI freeze**
+* **Category:** Performance
+* **Description:** TUI freeze while processing massive files.
+* **Causes:** The `ufw.log` file is excessively large (for example, > 5 GB) due to a sustained DoS attack.
+* **Consequences:** The main thread blocks, the interface stops responding to commands (`Ctrl+C`), and the user must kill the process.
+* **Probability:** Medium
+* **Impact:** High
+* **Trigger:** TUI response time above 2 seconds when switching tabs.
+* **Response Plan (Mitigation):** Implement asynchronous or multithreaded processing, separating the parsing engine from TUI rendering.
+* **Contingency Plan:** Limit reading to the last 500 MB by default and require an explicit flag for a full read.
+* **Notes:** Essential given the profile of demanding sysadmins.
 
-### **Riesgo 2: Congelamiento de la TUI (UI Freeze)**
-* **Categoría:** Rendimiento
-* **Descripción:** Congelamiento de la TUI al procesar archivos masivos.
-* **Causas:** El archivo `ufw.log` tiene un tamaño excesivo (ej. > 5GB) debido a un ataque DoS sostenido.
-* **Consecuencias:** El hilo principal se bloquea, la interfaz no responde a comandos (`Ctrl+C`), obligando al usuario a matar el proceso.
-* **Probabilidad:** Media
-* **Impacto:** Alto
-* **Umbral (Trigger):** Tiempo de respuesta de la TUI superior a 2 segundos al cambiar de pestaña.
-* **Plan de Respuesta (Mitigación):** Implementar procesamiento asíncrono o multihilo separando el motor de parseo del renderizado TUI.
-* **Plan de Contingencia:** Limitar la lectura por defecto a los últimos 500MB del archivo y requerir un flag explícito para lectura total.
-* **Observaciones:** Fundamental dado el perfil técnico de SysAdmins exigentes.
+### **Risk 3: False positives in the heuristics engine**
+* **Category:** Security / Functional
+* **Description:** False positives in threat detection.
+* **Causes:** Poorly calibrated Risk Score parameters; normal internal network traffic is labeled as a "Critical Attack".
+* **Consequences:** Loss of user trust in the tool; alert fatigue defeats the purpose of the dashboard.
+* **Probability:** High
+* **Impact:** Medium
+* **Trigger:** More than 3 community reports of incorrect detections in local traffic.
+* **Response Plan (Mitigation):** Provide `.toml` configuration files so users can calibrate heuristic weights for their environment.
+* **Contingency Plan:** Temporarily disable critical labels by default until the algorithm is adjusted locally.
+* **Notes:** Static fingerprinting is prone to errors in complex networks.
 
-
-### **Riesgo 3: Falsos positivos en el motor de heurística**
-* **Categoría:** Seguridad / Funcional
-* **Descripción:** Falsos positivos en la detección de amenazas.
-* **Causas:** Parámetros del Risk Score mal calibrados; tráfico normal de la red interna es etiquetado como "Ataque Crítico".
-* **Consecuencias:** Pérdida de confianza del usuario en la herramienta; fatiga de alertas que anula el propósito del dashboard.
-* **Probabilidad:** Alta
-* **Impacto:** Medio
-* **Umbral (Trigger):** Más de 3 reportes en la comunidad indicando detecciones erróneas en tráfico local.
-* **Plan de Respuesta (Mitigación):** Proveer archivos de configuración `.toml` para que el usuario calibre los umbrales de peso heurístico a su entorno.
-* **Plan de Contingencia:** Desactivar temporalmente etiquetas críticas por defecto hasta ajustar el algoritmo localmente.
-* **Observaciones:** El *fingerprinting* estático es propenso a errores en redes complejas.
-
-
-### **Riesgo 4: Fallos de ejecución por incompatibilidad de librerías (`glibc`)**
-* **Categoría:** Distribución
-* **Descripción:** Fallos de ejecución por falta de dependencias del sistema operativo.
-* **Causas:** Compilación dinámica estándar en Rust ejecutada en servidores corporativos con versiones de Linux muy antiguas (ej. CentOS 7).
-* **Consecuencias:** Error "version `GLIBC_2.XX` not found" al intentar ejecutar el binario, bloqueando la adopción.
-* **Probabilidad:** Media
-* **Impacto:** Alto
-* **Umbral (Trigger):** Reportes de fallo de binarios descargados desde las *Releases* de GitHub.
-* **Plan de Respuesta (Mitigación):** Configurar el CI (GitHub Actions) para compilar versiones estáticas usando `x86_64-unknown-linux-musl`.
-* **Plan de Contingencia:** Documentar claramente el proceso para que los usuarios compilen desde el código fuente con `cargo build`.
-* **Observaciones:** Clave para despliegues *air-gapped* que no se pueden actualizar fácilmente.
+### **Risk 4: Runtime failures due to library incompatibility (`glibc`)**
+* **Category:** Distribution
+* **Description:** Runtime failures caused by missing operating system dependencies.
+* **Causes:** Standard dynamically linked Rust builds running on corporate servers with very old Linux versions (for example, CentOS 7).
+* **Consequences:** The error `version 'GLIBC_2.XX' not found` blocks adoption.
+* **Probability:** Medium
+* **Impact:** High
+* **Trigger:** Failure reports for binaries downloaded from GitHub Releases.
+* **Response Plan (Mitigation):** Configure CI (GitHub Actions) to build static versions using `x86_64-unknown-linux-musl`.
+* **Contingency Plan:** Clearly document how users can build from source with `cargo build`.
+* **Notes:** Critical for air-gapped deployments that cannot be updated easily.

@@ -1,38 +1,27 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Report a reproducible problem with ufw-report
 title: ''
 labels: ''
 assignees: ''
-
 ---
 
 **Describe the bug**
-A clear and concise description of what the bug is.
+A clear and concise description of what happened.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**Environment**
+- OS and version:
+- ufw-report version (`ufw-report --version`):
+- Rust version (if built from source):
+- Log format (syslog or ISO timestamp, IPv4 or IPv6):
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+**Steps to reproduce**
+1. Command run: `ufw-report ...`
+2. Expected behavior:
+3. Actual behavior:
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
-
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
-
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+**Log sample**
+Include a few redacted `[UFW BLOCK]` lines that reproduce the issue. Remove or mask sensitive IP addresses and hostnames.
 
 **Additional context**
-Add any other context about the problem here.
+Any other detail that may help, such as terminal size for TUI issues or whether the cache was enabled.

@@ -1,77 +1,77 @@
-### **WBS: ufw-report (Desarrollo y Expansión)**
+### **WBS: ufw-report (Development and Expansion)**
 
-#### **1.0 Core Engine & Procesamiento de Datos**
+#### **1.0 Core Engine & Data Processing**
 
-*Actualmente el análisis es síncrono**. El objetivo aquí es mantener la precisión actual y preparar el motor para volúmenes masivos de datos.*
+*Analysis is currently synchronous. The goal is to preserve the current accuracy and prepare the engine for very large volumes of data.*
 
-* **1.1 Parser de Logs (Estado Actual)**
-* 1.1.1 Parseo de logs UFW para IPv4 e IPv6.
-* 1.1.2 Normalización de protocolos (numérico a nombre).
-* 1.1.3 Detección de dirección del tráfico (IN/OUT).
-* 1.1.4 Sistema de caché JSON opcional.
+* **1.1 Log Parser (Current State)**
+* 1.1.1 UFW log parsing for IPv4 and IPv6.
+* 1.1.2 Protocol normalization (numeric to name).
+* 1.1.3 Traffic direction detection (IN/OUT).
+* 1.1.4 Optional JSON cache, invalidation by log fingerprint and format version.
 
-* **1.2 Escalabilidad y Performance (Futuro)**
-* 1.2.1 Refactorización a una arquitectura multihilo para el procesamiento concurrente de archivos de log masivos, evitando bloqueos en la interfaz.
-* 1.2.2 Implementación de parser extendido para *flags* TCP, tamaño de ventana y TTL (necesario para fingerprinting offline).
-
----
-
-#### **2.0 Motor de Heurística de Amenazas (Nuevo)**
-
-*El núcleo de la propuesta de valor que convierte los datos en inteligencia procesable offline**.*
-
-* **2.1 Detección de Patrones**
-* 2.1.1 Módulo de detección de Fuerza Bruta (ráfagas a puertos de administración).
-* 2.1.2 Módulo de detección de Port Scanning (escaneos horizontales y verticales).
-* 2.1.3 Módulo de detección de volumen anómalo (posibles ataques DoS).
-
-* **2.2 Sistema de Puntuación (Risk Score)**
-* 2.2.1 Algoritmo local de asignación de pesos según la gravedad del tráfico.
-
-* **2.3 Fingerprinting Estático**
-* 2.3.1 Base de datos local (JSON/YAML) incrustada en el binario con firmas de herramientas de escaneo comunes (Nmap, Masscan).
+* **1.2 Scalability and Performance (Future)**
+* 1.2.1 Refactor to a multithreaded architecture for concurrent processing of large log files, avoiding UI stalls.
+* 1.2.2 Extended parser for TCP flags, window size, and TTL (needed for offline fingerprinting).
 
 ---
 
-#### **3.0 Interfaz TUI (Terminal User Interface)**
+#### **2.0 Threat Heuristics Engine (New)**
 
-*Ampliando las vistas actuales para acomodar la nueva inteligencia sin sacrificar el rendimiento.*
+*The core value proposition that turns data into actionable offline intelligence.*
 
-* **3.1 Vistas y Controles (Estado Actual)**
-* 3.1.1 Sistema de pestañas: Overview, Daily, Hourly y Raw.
-* 3.1.2 Navegación por teclado e interacciones de scroll.
+* **2.1 Pattern Detection**
+* 2.1.1 Brute-force detection module (bursts against administrative ports).
+* 2.1.2 Port-scanning detection module (horizontal and vertical scans).
+* 2.1.3 Anomalous-volume detection module (possible DoS attacks).
 
-* **3.2 Dashboard de Seguridad (Futuro)**
-* 3.2.1 Nueva pestaña "Threats/Alerts" ordenando IPs por el *Risk Score* calculado en lugar de solo por volumen.
-* 3.2.2 Identificadores visuales (tags o colores en terminal) para el tipo de amenaza detectada directamente en las vistas "Overview" y "Raw".
+* **2.2 Risk Score System**
+* 2.2.1 Local weighting algorithm based on traffic severity.
 
-* **3.3 Análisis Forense interactivo (Futuro)**
-* 3.3.1 Controles TUI para aislar y hacer "zoom" en ventanas de tiempo específicas (ej. seleccionar un pico anómalo en el gráfico *Daily* y expandir el detalle de ese incidente).
-
----
-
-#### **4.0 CLI & Mitigación Activa-Pasiva**
-
-*Proveyendo soluciones de bloqueo sin que la herramienta ejecute comandos privilegiados.*
-
-* **4.1 Argumentos y Exportación (Estado Actual)**
-* 4.1.1 Manejo de fechas (`--from`, `--to`) y rutas de log.
-* 4.1.2 Exportación de datos enriquecidos a CSV y JSON, incluyendo soporte para *pipelines* (`-o -`).
-
-* **4.2 Generación de Mitigación (Futuro)**
-* 4.2.1 Nuevo *flag* o atajo en la TUI para generar scripts de bloqueo (`bash` con comandos `ufw deny`) para que el usuario los ejecute de forma manual y controlada.
+* **2.3 Static Fingerprinting**
+* 2.3.1 Local database (JSON/YAML) embedded in the binary with signatures of common scanning tools (Nmap, Masscan).
 
 ---
 
-#### **5.0 Arquitectura, Calidad y Distribución**
+#### **3.0 Terminal User Interface (TUI)**
 
-*Garantizando la estabilidad y facilitando la adopción por parte de SysAdmins.*
+*Expanding the current views to accommodate the new intelligence without sacrificing performance.*
 
-* **5.1 Calidad y Seguridad Base (Estado Actual)**
-* 5.1.1 Suite de 56 tests (parser, config, models).
-* 5.1.2 CI Pipeline con GitHub Actions (fmt, clippy, tests).
-* 5.1.3 *Panic hook* para restauración de la terminal en caso de errores.
+* **3.1 Views and Controls (Current State)**
+* 3.1.1 Tab system: Overview, Daily, Hourly, and Raw.
+* 3.1.2 Keyboard navigation and scrolling interactions.
 
-* **5.2 Distribución (Futuro)**
-* 5.2.1 Empaquetado para gestores de la comunidad (Cargo) y creación de binarios estáticos para despliegues *air-gapped*.
-* 5.2.2 Creación de paquetes `.deb` o PPAs específicos para entornos Ubuntu/Debian.
+* **3.2 Security Dashboard (Future)**
+* 3.2.1 New "Threats/Alerts" tab that ranks IPs by the Risk Score instead of volume alone.
+* 3.2.2 Visual identifiers (tags or terminal colors) for the detected threat type directly in the "Overview" and "Raw" views.
+
+* **3.3 Interactive Forensic Analysis (Future)**
+* 3.3.1 TUI controls to isolate and zoom into specific time windows (for example, selecting an anomalous spike in the Daily chart and expanding the details of that incident).
+
+---
+
+#### **4.0 CLI & Active-Passive Mitigation**
+
+*Providing blocking solutions without the tool executing privileged commands.*
+
+* **4.1 Arguments and Export (Current State)**
+* 4.1.1 Date handling (`--from`, `--to`) and log paths.
+* 4.1.2 Export of enriched data to CSV and JSON, including pipeline support (`-o -`).
+
+* **4.2 Mitigation Generation (Future)**
+* 4.2.1 New flag or TUI shortcut to generate blocking scripts (`bash` with `ufw deny` commands) for the user to run manually and under control.
+
+---
+
+#### **5.0 Architecture, Quality, and Distribution**
+
+*Ensuring stability and making adoption easier for sysadmins.*
+
+* **5.1 Base Quality and Security (Current State)**
+* 5.1.1 Test suite covering parser, cache, configuration, models, output, CLI, and TUI navigation.
+* 5.1.2 CI pipeline with GitHub Actions (fmt, clippy, tests, build) on every branch.
+* 5.1.3 Panic hook that restores the terminal when an error occurs.
+
+* **5.2 Distribution (Future)**
+* 5.2.1 Packaging for community managers (Cargo) and static binaries for air-gapped deployments.
+* 5.2.2 Creation of `.deb` packages or PPAs for Ubuntu/Debian environments.

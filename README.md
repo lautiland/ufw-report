@@ -1,50 +1,105 @@
 # ufw-report
 
-CLI escrita en Rust que lee los logs de UFW, analiza trafico bloqueado y presenta un reporte interactivo en terminal (TUI). Tambien permite exportar a CSV/JSON.
+A Rust CLI that reads UFW logs, analyzes blocked traffic, and presents an interactive terminal report (TUI). It can also export the parsed entries to CSV or JSON.
 
-## Que es
+## What it is
 
-`ufw-report` resuelve el problema de interpretar los logs crudos de UFW (`/var/log/ufw.log`), que suelen ser ruidosos y dificiles de analizar con herramientas como `grep` o `tail`. A diferencia de soluciones pesadas como ELK o Splunk, esta herramienta es ligera, offline y funciona directamente en la terminal via SSH, ideal para servidores pequenos, VPS o Raspberry Pi.
+`ufw-report` turns the noisy output of `/var/log/ufw.log` into an aggregated view of blocked traffic by day, hour, source IP, destination port, and protocol. Instead of using `grep`/`tail` or deploying a heavy stack such as ELK or Splunk, it gives you an interactive dashboard directly in the terminal.
 
-## Instalacion
+It is lightweight, offline, and read-only: it never changes firewall rules, opens ports, or depends on external services. That makes it a good fit for sysadmins, DevOps engineers, auditors, and homelabbers working over SSH on small servers, VPS instances, or Raspberry Pis.
+
+## Requirements
+
+- Linux with UFW
+- Read access to the UFW log (`sudo`, or membership in the `adm` group)
+- Rust 1.82 or newer to build from source
+
+## Installation
 
 ```bash
-git clone https://github.com/tu-usuario/ufw-report.git
+git clone https://github.com/lautiland/ufw-report.git
 cd ufw-report
 cargo build --release
 ```
 
-El binario estara en `target/release/ufw-report`.
+The binary is written to `target/release/ufw-report`.
 
-## Uso
+## Usage
 
 ```bash
-# Modo TUI interactivo (default: ultimos 7 dias)
+# Interactive TUI (default range: last 7 days)
 ufw-report
 
-# Especificar rango de fechas
+# Custom date range
 ufw-report --from 2026-06-01 --to 2026-06-30
 
-# Ruta personalizada al log
+# Custom log path
 ufw-report --log-file /var/log/ufw.log
 
-# Exportar a CSV
-ufw-report --csv -o reporte.csv
+# Export CSV to stdout
+ufw-report --csv > report.csv
 
-# Exportar a JSON (pipeable)
+# Export CSV to a file
+ufw-report --csv -o report.csv
+
+# Export JSON to a file
+ufw-report -o report.json
+
+# Export JSON to stdout (pipeable)
 ufw-report -o -
+
+# Disable the parse cache
+ufw-report --no-cache
 ```
 
-## Funcionalidades
+### Output format precedence
 
-- Parseo de logs UFW (IPv4 e IPv6)
-- Normalizacion de protocolos (numero a nombre)
-- Deteccion de direccion (IN=/OUT=)
-- Rango de fechas configurable (default: ultimos 7 dias)
-- Dias sin datos rellenados con ceros
-- Cache JSON opcional del parser
-- 4 vistas: Overview, Daily, Hourly y Raw
-- Exportacion a CSV y JSON
+The format is resolved in one place and never inferred silently:
+
+- No `--csv` and no `-o`: interactive TUI.
+- `--csv`: CSV, to stdout or to the `-o` path.
+- `--csv -o report.json`: error, because the flag and the extension contradict each other.
+- `-o report.csv`: CSV.
+- `-o report.json`: JSON.
+- `-o report` (no extension): JSON.
+- `-o -`: CSV with `--csv`, JSON otherwise.
+
+## Cache
+
+The parser cache is enabled by default and is stored per user:
+
+- `$XDG_CACHE_HOME/ufw-report/<hash>.json`
+- `~/.cache/ufw-report/<hash>.json` when `XDG_CACHE_HOME` is not set
+- A temporary directory as a last resort
+
+The cache stores all parsed entries together with the log size and modification time, plus cache and parser version numbers. It is invalidated automatically when the log changes or when the cache format changes, and it can serve any date range because the filtering happens after loading.
+
+Use `--no-cache` to disable both reading and writing. Cache write failures are non-fatal and reported as warnings.
+
+## Features
+
+- UFW log parsing for IPv4 and IPv6, including syslog and ISO timestamps
+- Protocol normalization (numeric values to names)
+- Traffic direction detection (`IN=` / `OUT=`)
+- Configurable date range (default: last 7 days)
+- Zero-filled days with no data
+- Range-safe JSON parse cache
+- Four TUI views: Overview, Daily, Hourly, and Raw
+- CSV and JSON export, including stdout pipelines
+
+## TUI controls
+
+| Key | Action |
+|-----|--------|
+| `1`-`4` | Switch to Overview, Daily, Hourly, or Raw |
+| `Tab` / `Shift+Tab` | Next / previous tab |
+| `←` `→` | Previous / next day (Daily and Hourly) |
+| `↑` `↓` | Scroll protocols (Overview), previous / next hour (Hourly), scroll rows (Raw) |
+| `Shift+↑` `Shift+↓` | Fast scroll in Overview and Raw |
+| `PgUp` `PgDn` | Page scroll in Overview, Raw, and the Hourly log table |
+| `Shift+PgUp` `Shift+PgDn` | Fast page scroll |
+| `Enter` | Open the selected day in Hourly |
+| `q` / `Esc` | Quit |
 
 ## Tests
 
@@ -52,6 +107,8 @@ ufw-report -o -
 cargo test
 ```
 
-## Licencia
+The suite covers the parser, date range handling, cache invalidation, aggregation, output formats, CLI behavior, and TUI navigation.
+
+## License
 
 MIT - Copyright (c) 2026 Lautaro Matias Jovanovics

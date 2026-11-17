@@ -1,14 +1,12 @@
-# Plan de Implementación: Refactorización por Módulos
+# Implementation Plan: Module Refactor and Consistency Pass
 
-## Resumen Ejecutivo
+## Executive Summary
 
-Reorganizar la estructura plana actual (`src/*.rs`) en un sistema de módulos por directorios, alineado con el WBS. El objetivo es separar responsabilidades, facilitar el desarrollo futuro (motor de amenazas, TUI ampliada), y mantener la compilación y tests pasando en cada fase.
+Reorganize the codebase into feature modules, keep the analysis pipeline data-driven, and close the consistency gaps between code, tests, CLI behavior, TUI hints, and documentation. The threat heuristics engine remains a future phase.
 
-**Regla central:** los módulos se comunican a través de datos (`models/`), no a través de referencias cruzadas directas.
+**Core rule:** modules communicate through data (`models/`), not through cross-module references.
 
----
-
-## Estructura Objetivo
+## Target Structure
 
 ```
 src/
@@ -21,20 +19,20 @@ src/
 ├── core/
 │   ├── mod.rs
 │   ├── parser.rs        # parse_log_line(), regexes
-│   ├── range.rs         # parse_ufw_log_range(), build_daily_reports()
-│   └── cache.rs         # Caché JSON
+│   ├── range.rs         # parse_ufw_log_range(), ParseOptions
+│   └── cache.rs         # Range-safe JSON cache
 ├── models/
 │   ├── mod.rs
 │   ├── entry.rs         # LogEntry, Direction
 │   ├── report.rs        # DailyReport, HourBreak, IpEntry, PortEntry
 │   └── aggregate.rs     # AggregatedData, build_aggregated()
 ├── output/
-│   ├── mod.rs
+│   ├── mod.rs           # OutputFormat, write_output()
 │   ├── csv.rs           # write_csv()
-│   └── json.rs          # write_json(), write_output()
+│   └── json.rs          # write_json()
 ├── tui/
-│   ├── mod.rs           # run_tui()
-│   ├── app.rs           # Struct App
+│   ├── mod.rs           # Event loop, key handling, App
+│   ├── app.rs           # App, Tab
 │   ├── tabs/
 │   │   ├── mod.rs
 │   │   ├── overview.rs
@@ -43,133 +41,88 @@ src/
 │   │   └── raw.rs
 │   └── widgets/
 │       ├── mod.rs
-│       └── ...
+│       └── bar_chart.rs
 ├── error.rs
 └── logging.rs
 ```
 
----
-
-## Dependencias Entre Módulos
+## Module Dependencies
 
 ```
 main.rs → cli, core, models, output, tui
 cli/    → error
 core/   → models, error
-models/ → (ninguno)
+models/ → (none)
 output/ → models
 tui/    → models
 ```
 
----
+## Phase 1: Reorganize Existing Code (Complete)
 
-## Fase 1: Reorganizar Código Existente (refactor puro)
+**Goal:** Move code into the new directories without changing behavior.
 
-**Objetivo:** Mover código a los nuevos directorios sin cambiar lógica.
+- [x] Create `src/cli/`, `src/core/`, `src/models/`, `src/output/`, `src/tui/`
+- [x] Move configuration and CLI arguments into `cli/`
+- [x] Split parsing, range handling, and caching into `core/`
+- [x] Split entries, reports, and aggregation into `models/`
+- [x] Split CSV and JSON output into `output/`
+- [x] Extract the TUI app and tabs into `tui/`
+- [x] Re-export modules from `lib.rs`
+- [x] Verify with `fmt`, `clippy`, and `test`
 
-### 1.1 Crear estructura de directorios
-- `src/cli/`, `src/core/`, `src/models/`, `src/output/`, `src/tui/`
-- `src/tui/tabs/`, `src/tui/widgets/`
+## Phase 2: Separate the TUI into Subcomponents (Complete)
 
-### 1.2 Mover `config.rs` → `cli/`
-- `src/config.rs` → `src/cli/config.rs` (renombrar args internamente)
-- `src/cli/args.rs` → extraer `CliArgs` de `config.rs`
-- Crear `src/cli/mod.rs` con re-exports
+**Goal:** One file per tab and reusable widgets.
 
-### 1.3 Mover `parser.rs` → `core/`
-- Separar `parse_ufw_log_range()`, `build_daily_reports()` → `core/range.rs`
-- Mover regexes y `parse_log_line()` → `core/parser.rs`
-- Mover lógica de caché → `core/cache.rs`
-- Crear `src/core/mod.rs` con re-exports
+- [x] Extract each tab into `tui/tabs/`
+- [x] Extract bar-chart builders into `tui/widgets/bar_chart.rs`
+- [x] Introduce `Tab` enum and remove magic tab indexes
+- [x] Make status hints and navigation behavior share one source of truth
+- [x] Verify with `fmt`, `clippy`, and `test`
 
-### 1.4 Mover `models.rs` → `models/`
-- `Direction`, `LogEntry` → `models/entry.rs`
-- `DailyReport`, `HourBreak`, `IpEntry`, `PortEntry` → `models/report.rs`
-- `AggregatedData`, `build_aggregated()` → `models/aggregate.rs`
-- Crear `src/models/mod.rs` con re-exports
+## Phase 3: Consistency Pass (Complete)
 
-### 1.5 Mover `output.rs` → `output/`
-- `write_csv()` → `output/csv.rs`
-- `write_json()`, `write_output()` → `output/json.rs`
-- Crear `src/output/mod.rs` con re-exports
+- [x] Fix the clippy lint that left CI red
+- [x] Run CI on every branch and on pull requests to `main`
+- [x] Track `Cargo.lock`
+- [x] Make the cache range-safe: store all entries plus log fingerprint and format version
+- [x] Move the cache to `$XDG_CACHE_HOME` and add `--no-cache`
+- [x] Make cache writes atomic and non-fatal
+- [x] Report real unique IP counts with a v4/v6 split
+- [x] Use the Overview scroll state instead of leaving it dead
+- [x] Remove the 20-row cap from the Raw view
+- [x] Unify keyboard navigation: `←`/`→` selects days, `↑`/`↓` selects hours in Hourly
+- [x] Resolve the output format in one place; make `--csv` win and reject a contradictory `.json` path
+- [x] Make date resolution deterministic by injecting the reference date
+- [x] Add fixture, cache, CLI, and App-navigation tests
+- [x] Translate the CLI, TUI, and documentation to English
+- [x] Add package metadata and an MSRV
 
-### 1.6 Mover `tui.rs` → `tui/`
-- `App` struct → `tui/app.rs`
-- Cada tab → `tui/tabs/{overview,daily,hourly,raw}.rs`
-- Event loop y helpers → `tui/mod.rs`
-- Crear `src/tui/widgets/mod.rs` (vacío por ahora)
+## Phase 4: Prepare the Threat Engine (Pending)
 
-### 1.7 Crear `logging.rs`
-- Extraer setup de `tracing_subscriber` de `main.rs`
+**Goal:** Create the `threat/` module structure with ready interfaces.
 
-### 1.8 Actualizar `lib.rs` y `main.rs`
-- `lib.rs`: re-exportar `cli`, `core`, `models`, `output`, `tui`, `error`, `logging`
-- `main.rs`: actualizar imports
+- [ ] Create `src/threat/`
+- [ ] Define the `ThreatDetector` trait
+- [ ] Add stubs for brute force, port scan, anomaly detection, scoring, and fingerprinting
+- [ ] Add `ThreatAlert` to `models/`
+- [ ] Integrate into the pipeline without real logic
 
-### 1.9 Verificar
-```bash
-cargo fmt
-cargo clippy -D warnings
-cargo test
-```
-
----
-
-## Fase 2: Separar TUI en Sub-componentes
-
-**Objetivo:** Cada tab y widget reutilizable en su propio archivo.
-
-### 2.1 Extraer tabs
-- Cada función de rendering de tab → archivo independiente en `tui/tabs/`
-- `tui/mod.rs` delega a cada tab según `current_tab`
-
-### 2.2 Extraer widgets
-- BarChart con windowing → `tui/widgets/bar_chart.rs`
-- Tabla con scroll → `tui/widgets/table_scroll.rs`
-- Tarjetas de resumen → `tui/widgets/summary_cards.rs`
-
-### 2.3 Verificar
-```bash
-cargo fmt && cargo clippy -D warnings && cargo test
-```
-
----
-
-## Fase 3: Preparar Motor de Amenazas (stubs)
-
-**Objetivo:** Crear la estructura del módulo `threat/` con interfaces listas.
-
-### 3.1 Crear `src/threat/`
-- `mod.rs`: trait `ThreatDetector`
-- `bruteforce.rs`: stub
-- `portscan.rs`: stub
-- `anomaly.rs`: stub
-- `scoring.rs`: stub
-- `fingerprint.rs`: stub
-
-### 3.2 Agregar `ThreatAlert` a `models/`
-
-### 3.3 Integrar en pipeline (sin lógica real)
-
-### 3.4 Verificar
-```bash
-cargo fmt && cargo clippy -D warnings && cargo test
-```
-
----
-
-## Verificación Final
+## Verification
 
 ```bash
-cargo fmt --check
-cargo clippy -D warnings
-cargo test
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -W clippy::pedantic -D warnings
+cargo test --all-targets
+cargo build --release
 ```
 
-## Criterios de Aceptación
+## Acceptance Criteria
 
-1. [ ] Fase 1: Todos los archivos reorganizados, tests pasan
-2. [ ] Fase 2: TUI separada en tabs/widgets independientes
-3. [ ] Fase 3: Módulo `threat/` creado con traits e integración stub
-4. [ ] `cargo clippy` sin warnings en cada fase
-5. [ ] `lib.rs` re-exporta todo correctamente
+1. [x] Phase 1: all files reorganized and tests pass
+2. [x] Phase 2: TUI separated into independent tabs and widgets
+3. [x] Phase 3: consistency gaps closed and documented
+4. [ ] Phase 4: `threat/` module created with traits and stub integration
+5. [x] `cargo clippy` clean on every change
+6. [x] `lib.rs` re-exports everything needed by the binary
+7. [x] CI green on every branch and on pull requests

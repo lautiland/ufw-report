@@ -1,50 +1,50 @@
-### **Lean Canvas de ufw-report**
+### **Lean Canvas for ufw-report**
 
-**1. Problema (Problem)**
+**1. Problem**
 
-* Los logs raw de UFW (`/var/log/syslog` o `ufw.log`) son ruidosos, repetitivos y difíciles de interpretar en tiempo real usando solo `grep` o `tail`.
-* Los sistemas de monitoreo avanzados (como ELK stack o Splunk) son excesivamente pesados, consumen muchos recursos de memoria/CPU y son inviables para servidores pequeños, VPS o Raspberry Pis.
-* Las herramientas automatizadas que modifican reglas de firewall de forma activa introducen riesgos de seguridad (amplían la superficie de ataque) si son comprometidas.
+* Raw UFW logs (`/var/log/syslog` or `ufw.log`) are noisy, repetitive, and difficult to interpret in real time using only `grep` or `tail`.
+* Advanced monitoring systems (such as the ELK stack or Splunk) are excessively heavy, consume a lot of memory and CPU, and are impractical for small servers, VPS instances, or Raspberry Pis.
+* Automated tools that actively modify firewall rules introduce security risks (they increase the attack surface) if compromised.
 
-**2. Segmentos de Clientes (Customer Segments)**
+**2. Customer Segments**
 
-* **SysAdmins y DevOps:** Administradores de infraestructura que manejan flotas de servidores Linux (especialmente ecosistemas basados en Ubuntu/Debian) y necesitan visibilidad rápida por SSH.
-* **Blue Teamers y Auditores de Seguridad:** Profesionales que necesitan analizar incidentes de forma forense directamente desde la máquina comprometida, sin depender de conectividad externa.
-* **Homelabbers:** Entusiastas del self-hosting que exponen servicios a internet y quieren monitorear quién intenta atacarlos de forma visual y ligera.
+* **SysAdmins and DevOps:** Infrastructure administrators who manage fleets of Linux servers (especially Ubuntu/Debian ecosystems) and need quick visibility over SSH.
+* **Blue Teamers and Security Auditors:** Professionals who need to perform forensic incident analysis directly on the compromised machine, without relying on external connectivity.
+* **Homelabbers:** Self-hosting enthusiasts who expose services to the internet and want to monitor who is trying to attack them in a visual and lightweight way.
 
-**3. Propuesta de Valor Única (Unique Value Proposition - UVP)**
+**3. Unique Value Proposition (UVP)**
 
-* *Un dashboard de inteligencia de amenazas directamente en tu terminal.* Convierte los logs crudos de UFW en información procesable mediante análisis heurístico offline, con un consumo de recursos mínimo y un modelo de seguridad "read-only" que no compromete tu firewall.
+* *A threat-intelligence dashboard directly in your terminal.* It turns raw UFW logs into actionable information through offline heuristic analysis, with minimal resource consumption and a "read-only" security model that does not compromise your firewall.
 
-**4. Solución (Solution)**
+**4. Solution**
 
-* Interfaz TUI de alto rendimiento capaz de procesar archivos de log masivos de forma concurrente sin congelar la terminal.
-* Motor de heurística local (offline) que identifica patrones de ataque (fuerza bruta, escaneos, DoS) y asigna un "Risk Score".
-* Generador de scripts o comandos de mitigación para que el administrador los aplique manualmente, manteniendo el principio de privilegios mínimos.
+* High-performance TUI capable of processing massive log files concurrently without freezing the terminal.
+* Local (offline) heuristics engine that identifies attack patterns (brute force, scans, DoS) and assigns a Risk Score.
+* Generator of mitigation scripts or commands for the administrator to apply manually, preserving the principle of least privilege.
 
-**5. Canales (Channels)**
+**5. Channels**
 
-* Repositorios de paquetes y gestores (ej. publicarlo en repositorios de la comunidad, Cargo si usás lenguajes de bajo nivel, o PPAs de Ubuntu).
-* Comunidades técnicas en Reddit (`r/linuxadmin`, `r/homelab`, `r/cybersecurity`).
-* Foros y plataformas de código abierto como GitHub (ganando tracción a través de *stars* y *trending*).
+* Package repositories and managers (for example, publishing to community repositories, Cargo for low-level languages, or Ubuntu PPAs).
+* Technical communities on Reddit (`r/linuxadmin`, `r/homelab`, `r/cybersecurity`).
+* Forums and open-source platforms such as GitHub (gaining traction through stars and trending).
 
-**6. Flujo de Ingresos (Revenue Streams)**
+**6. Revenue Streams**
 
-* **Modelo 100% Open Source:** El valor principal aquí podría ser la construcción de reputación, utilizándolo como una pieza central de peso técnico en un portfolio profesional.
-* **Donaciones:** GitHub Sponsors o BuyMeACoffee.
-* **Freemium (A futuro):** Funciones core gratuitas; licenciamiento comercial para integraciones con infraestructuras empresariales.
+* **100% Open Source model:** The main value here could be reputation building, using the project as a technically strong centerpiece for a professional portfolio.
+* **Donations:** GitHub Sponsors or BuyMeACoffee.
+* **Freemium (future):** Free core features; commercial licensing for enterprise infrastructure integrations.
 
-**7. Estructura de Costos (Cost Structure)**
+**7. Cost Structure**
 
-* Prácticamente nula en términos monetarios iniciales.
-* El costo principal es tu tiempo de desarrollo, optimización de la arquitectura concurrente para el procesamiento de logs, y mantenimiento del repositorio.
+* Practically zero initial monetary cost.
+* The main cost is development time, optimizing the concurrent architecture for log processing, and repository maintenance.
 
-**8. Métricas Clave (Key Metrics)**
+**8. Key Metrics**
 
-* Cantidad de descargas/instalaciones.
-* Rendimiento técnico: Tiempo de procesamiento por cada 100,000 líneas de log y megabytes de memoria RAM consumida durante el uso intensivo.
-* Usuarios recurrentes o *Issues/Pull Requests* abiertos en el repositorio por la comunidad.
+* Number of downloads/installations.
+* Technical performance: processing time per 100,000 log lines and memory usage during intensive use.
+* Recurring users or community issues/pull requests in the repository.
 
-**9. Ventaja Injusta (Unfair Advantage)**
+**9. Unfair Advantage**
 
-* *Arquitectura orientada a la seguridad extrema:* Mientras otros buscan automatizar todo en la nube, tu herramienta apuesta por el procesamiento offline, local y de solo lectura. Para un perfil paranoico de ciberseguridad, esto no es una limitación, es una "feature" de diseño fundamental que genera confianza inmediata.
+* *An architecture oriented toward extreme security:* while others try to automate everything in the cloud, this tool bets on offline, local, read-only processing. For a security-conscious profile, this is not a limitation; it is a fundamental design feature that generates immediate trust.
