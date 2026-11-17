@@ -129,7 +129,7 @@ pub struct CoverageSummary {
     pub hours_with_data: u32,
     pub missing_hours: u32,
     pub longest_gap_hours: u32,
-    pub coverage_pct: f32,
+    pub coverage_pct: f64,
 }
 
 /// High-level counters used by the TUI header and the Markdown export.
