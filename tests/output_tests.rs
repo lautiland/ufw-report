@@ -50,7 +50,7 @@ fn test_write_csv_to_file() {
     let path = dir.path().join("report.csv");
     let path_str = path.to_str().unwrap();
 
-    output::write_output(&sample_entries(), path_str).unwrap();
+    output::write_output(&sample_entries(), path_str, output::OutputFormat::Csv).unwrap();
 
     let contents = std::fs::read_to_string(path_str).unwrap();
     assert!(contents.starts_with("date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction\n"));
@@ -65,7 +65,7 @@ fn test_write_json_to_file() {
     let path = dir.path().join("report.json");
     let path_str = path.to_str().unwrap();
 
-    output::write_output(&sample_entries(), path_str).unwrap();
+    output::write_output(&sample_entries(), path_str, output::OutputFormat::Json).unwrap();
 
     let contents = std::fs::read_to_string(path_str).unwrap();
     let parsed: Vec<serde_json::Value> = serde_json::from_str(&contents).unwrap();
@@ -76,12 +76,12 @@ fn test_write_json_to_file() {
 }
 
 #[test]
-fn test_write_json_default_extension() {
+fn test_write_json_without_extension() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("report"); // no extension → defaults to JSON
     let path_str = path.to_str().unwrap();
 
-    output::write_output(&sample_entries(), path_str).unwrap();
+    output::write_output(&sample_entries(), path_str, output::OutputFormat::Json).unwrap();
 
     let contents = std::fs::read_to_string(path_str).unwrap();
     let parsed: Vec<serde_json::Value> = serde_json::from_str(&contents).unwrap();

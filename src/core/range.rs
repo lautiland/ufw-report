@@ -1,19 +1,81 @@
 use std::collections::HashMap;
 use std::io::BufRead;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 
 use crate::error::UfwError;
-use crate::models::{DailyReport, HourBreak, IpEntry, LogEntry, PortEntry};
+use crate::models::{DailyReport, HourBreak, IpEntry, LogEntry, ParseStats, PortEntry};
 
-use super::cache::{get_cache_path, save_cache, try_load_cache};
+use super::cache::{cache_file_for, default_cache_dir, save_cache, try_load_cache};
 use super::parser::parse_log_line;
+
+#[derive(Debug, Clone)]
+pub struct ParseOptions {
+    pub use_cache: bool,
+    pub cache_dir: Option<PathBuf>,
+    /// Reference date used to resolve syslog entries that omit the year.
+    /// Defaults to today; tests pin it for deterministic results.
+    pub reference_date: Option<NaiveDate>,
+}
+
+impl Default for ParseOptions {
+    fn default() -> Self {
+        Self {
+            use_cache: true,
+            cache_dir: None,
+            reference_date: None,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct ParseResult {
     pub reports: Vec<DailyReport>,
     pub all_entries: Vec<LogEntry>,
+    /// Whole-file line counters, not restricted to the requested range.
+    pub stats: ParseStats,
+}
+
+#[derive(Debug, Default)]
+struct StatsAccumulator {
+    stats: ParseStats,
+    previous: Option<(NaiveDate, u32)>,
+}
+
+impl StatsAccumulator {
+    fn observe(
+        &mut self,
+        line: &str,
+        parsed: Option<&(NaiveDate, u32, LogEntry)>,
+        today: NaiveDate,
+    ) {
+        self.stats.total_lines += 1;
+        let line = line.trim();
+
+        if line.contains("[UFW BLOCK]") {
+            self.stats.block_lines += 1;
+            if let Some((date, hour, entry)) = parsed {
+                if self.previous.is_some_and(|(previous_date, previous_hour)| {
+                    (*date, *hour) < (previous_date, previous_hour)
+                }) {
+                    self.stats.out_of_order_lines += 1;
+                }
+                self.previous = Some((*date, *hour));
+                if entry.date > today {
+                    self.stats.future_entries += 1;
+                }
+            } else {
+                self.stats.unparsed_block_lines += 1;
+            }
+        } else if line.contains("[UFW ALLOW]") {
+            self.stats.allow_lines += 1;
+        } else if line.contains("[UFW AUDIT]") {
+            self.stats.audit_lines += 1;
+        } else {
+            self.stats.other_lines += 1;
+        }
+    }
 }
 
 /// # Errors
@@ -25,26 +87,46 @@ pub fn parse_ufw_log_range(
     from: NaiveDate,
     to: NaiveDate,
 ) -> Result<ParseResult, UfwError> {
+    parse_ufw_log_range_with_options(log_path, from, to, &ParseOptions::default())
+}
+
+/// Same as [`parse_ufw_log_range`], with explicit cache options.
+///
+/// # Errors
+///
+/// Returns [`UfwError::LogNotFound`] if the log file doesn't exist, or
+/// [`UfwError::PermissionDenied`] if the file cannot be read.
+pub fn parse_ufw_log_range_with_options(
+    log_path: &str,
+    from: NaiveDate,
+    to: NaiveDate,
+    options: &ParseOptions,
+) -> Result<ParseResult, UfwError> {
     let path = Path::new(log_path);
     if !path.exists() {
         return Err(UfwError::LogNotFound(log_path.to_string()));
     }
 
-    let cache_path = get_cache_path(log_path);
-    if let Some(cached_entries) = try_load_cache(&cache_path, path, from, to) {
-        tracing::debug!("Loaded {} cached entries", cached_entries.len());
-        let reports = build_daily_reports(&cached_entries, from, to);
-        return Ok(ParseResult {
-            reports,
-            all_entries: cached_entries,
-        });
+    let cache_dir = options.cache_dir.clone().unwrap_or_else(default_cache_dir);
+    let cache_path = cache_file_for(path, &cache_dir);
+
+    if options.use_cache {
+        if let Some((cached_entries, stats)) = try_load_cache(&cache_path, path, from, to) {
+            tracing::debug!("Loaded {} cached entries", cached_entries.len());
+            let reports = build_daily_reports(&cached_entries, from, to);
+            return Ok(ParseResult {
+                reports,
+                all_entries: cached_entries,
+                stats,
+            });
+        }
     }
 
     let file = std::fs::File::open(path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::PermissionDenied {
             UfwError::PermissionDenied {
                 path: log_path.to_string(),
-                hint: "Ejecuta con 'sudo' o agrega tu usuario al grupo 'adm'".into(),
+                hint: "Run with 'sudo' or add your user to the 'adm' group".into(),
             }
         } else {
             UfwError::LogRead(e)
@@ -52,25 +134,43 @@ pub fn parse_ufw_log_range(
     })?;
     let reader = std::io::BufReader::new(file);
 
-    let current_year = chrono::Local::now().year();
+    let today = options
+        .reference_date
+        .unwrap_or_else(|| chrono::Local::now().date_naive());
     let mut entries: Vec<LogEntry> = Vec::new();
+    let mut all_entries: Vec<LogEntry> = Vec::new();
+    let mut accumulator = StatsAccumulator::default();
 
     for line in reader.lines() {
         let line = line?;
-        if let Some((date, _hour, entry)) = parse_log_line(&line, current_year) {
+        let parsed = parse_log_line(&line, today);
+        accumulator.observe(&line, parsed.as_ref(), today);
+
+        if let Some((date, _hour, entry)) = parsed {
+            if options.use_cache {
+                all_entries.push(entry.clone());
+            }
             if date >= from && date <= to {
                 entries.push(entry);
             }
         }
     }
 
-    save_cache(&cache_path, &entries);
+    let stats = accumulator.stats;
+
+    if options.use_cache && !save_cache(&cache_path, path, &all_entries, &stats) {
+        tracing::warn!(
+            "Could not write the parse cache to {}; continuing without cache",
+            cache_path.display()
+        );
+    }
 
     let reports = build_daily_reports(&entries, from, to);
 
     Ok(ParseResult {
         reports,
         all_entries: entries,
+        stats,
     })
 }
 
@@ -187,7 +287,12 @@ mod tests {
 
         let from = NaiveDate::from_ymd_opt(2026, 6, 28).unwrap();
         let to = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
-        let result = parse_ufw_log_range(log_path.to_str().unwrap(), from, to);
+        let options = ParseOptions {
+            use_cache: false,
+            ..ParseOptions::default()
+        };
+        let result =
+            parse_ufw_log_range_with_options(log_path.to_str().unwrap(), from, to, &options);
 
         assert!(result.is_ok());
         let parse_result = result.unwrap();
@@ -195,6 +300,125 @@ mod tests {
         for report in &parse_result.reports {
             assert_eq!(report.total_blocked, 0);
         }
+    }
+
+    #[test]
+    fn test_parse_stats_classify_and_flag_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("ufw.log");
+        std::fs::write(
+            &log_path,
+            concat!(
+                "2026-06-28T08:00:00 host kernel: [UFW BLOCK] IN=eth0 SRC=10.0.0.1 DPT=22 PROTO=TCP\n",
+                "2026-06-28T09:00:00 host kernel: [UFW ALLOW] IN=eth0 SRC=1.2.3.4 DPT=80 PROTO=TCP\n",
+                "2026-06-28T10:00:00 host kernel: [UFW AUDIT] IN=eth0 SRC=10.0.0.2 DPT=443 PROTO=TCP\n",
+                "2026-06-28T07:00:00 host kernel: [UFW BLOCK] IN=eth0 SRC=10.0.0.3 DPT=80 PROTO=TCP\n",
+                "2026-06-28T11:00:00 host kernel: [UFW BLOCK] IN=eth0\n",
+                "\n",
+                "some random line\n",
+            ),
+        )
+        .unwrap();
+
+        let options = ParseOptions {
+            use_cache: false,
+            reference_date: Some(NaiveDate::from_ymd_opt(2026, 6, 30).unwrap()),
+            ..ParseOptions::default()
+        };
+        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
+        let to = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
+        let result =
+            parse_ufw_log_range_with_options(log_path.to_str().unwrap(), from, to, &options)
+                .unwrap();
+
+        assert_eq!(result.stats.total_lines, 7);
+        assert_eq!(result.stats.block_lines, 3);
+        assert_eq!(result.stats.allow_lines, 1);
+        assert_eq!(result.stats.audit_lines, 1);
+        assert_eq!(result.stats.other_lines, 2);
+        assert_eq!(result.stats.unparsed_block_lines, 1);
+        assert_eq!(result.stats.out_of_order_lines, 1);
+        assert_eq!(result.stats.future_entries, 0);
+        assert_eq!(result.stats.parsed_block_lines(), 2);
+    }
+
+    #[test]
+    fn test_parse_stats_flags_future_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("ufw.log");
+        std::fs::write(
+            &log_path,
+            "2026-06-28T08:00:00 host kernel: [UFW BLOCK] IN=eth0 SRC=10.0.0.1 DPT=22 PROTO=TCP\n",
+        )
+        .unwrap();
+
+        let options = ParseOptions {
+            use_cache: false,
+            reference_date: Some(NaiveDate::from_ymd_opt(2026, 6, 27).unwrap()),
+            ..ParseOptions::default()
+        };
+        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
+        let to = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
+        let result =
+            parse_ufw_log_range_with_options(log_path.to_str().unwrap(), from, to, &options)
+                .unwrap();
+
+        assert_eq!(result.stats.future_entries, 1);
+    }
+
+    #[test]
+    fn test_cache_serves_wider_range_after_narrow_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("ufw.log");
+        std::fs::write(
+            &log_path,
+            concat!(
+                "2026-06-28T08:00:00 host kernel: [UFW BLOCK] IN=eth0 SRC=10.0.0.1 DPT=22 PROTO=TCP\n",
+                "2026-07-04T09:00:00 host kernel: [UFW BLOCK] IN=eth0 SRC=10.0.0.2 DPT=80 PROTO=TCP\n",
+            ),
+        )
+        .unwrap();
+
+        let options = ParseOptions {
+            use_cache: true,
+            cache_dir: Some(dir.path().join("cache")),
+            ..ParseOptions::default()
+        };
+        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
+        let to_june = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
+        let first =
+            parse_ufw_log_range_with_options(log_path.to_str().unwrap(), from, to_june, &options)
+                .unwrap();
+        assert_eq!(first.all_entries.len(), 1);
+
+        let to_july = NaiveDate::from_ymd_opt(2026, 7, 31).unwrap();
+        let second =
+            parse_ufw_log_range_with_options(log_path.to_str().unwrap(), from, to_july, &options)
+                .unwrap();
+        assert_eq!(second.all_entries.len(), 2);
+    }
+
+    #[test]
+    fn test_no_cache_does_not_create_cache_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("ufw.log");
+        std::fs::write(
+            &log_path,
+            "2026-06-28T08:00:00 host kernel: [UFW BLOCK] IN=eth0 SRC=10.0.0.1 DPT=22 PROTO=TCP\n",
+        )
+        .unwrap();
+
+        let cache_dir = dir.path().join("cache");
+        let options = ParseOptions {
+            use_cache: false,
+            cache_dir: Some(cache_dir.clone()),
+            ..ParseOptions::default()
+        };
+        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
+        let to = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
+        parse_ufw_log_range_with_options(log_path.to_str().unwrap(), from, to, &options).unwrap();
+
+        assert!(!cache_dir.exists());
     }
 
     #[test]

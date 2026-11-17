@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: ["**"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -13,24 +14,27 @@ env:
 jobs:
   build_and_test:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout del repositorio
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Configurar caché de Rust
+      - name: Configure Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: "ufw-report-cache"
 
-      - name: Verificar formato (fmt)
+      - name: Check formatting (fmt)
         run: cargo fmt --all -- --check
 
-      - name: Análisis estricto (Clippy + Pedantic)
+      - name: Strict analysis (Clippy + Pedantic)
         run: cargo clippy --all-targets --all-features -- -W clippy::pedantic -D warnings
 
-      - name: Compilar proyecto (Build)
-        run: cargo build --verbose
+      - name: Build project
+        run: cargo build --verbose --locked
 
-      - name: Ejecutar tests
-        run: cargo test --verbose
+      - name: Build release binary (locked)
+        run: cargo build --release --verbose --locked
+
+      - name: Run tests
+        run: cargo test --verbose --locked

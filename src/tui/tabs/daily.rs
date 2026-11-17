@@ -1,134 +1,98 @@
-use crate::models::DailyReport;
+use crate::models::AggregatedData;
+use crate::tui::widgets::bar_chart::{build_daily_bars, to_u16_clamped};
 
 use ratatui::{
+    layout::Rect,
     style::{Color, Style},
-    widgets::Bar,
+    text::{Line, Span},
+    widgets::{BarChart, Block, Borders, Paragraph},
+    Frame,
 };
 
-pub(crate) fn to_u16_clamped(v: usize) -> u16 {
-    u16::try_from(v).unwrap_or(u16::MAX)
-}
-
-pub(crate) struct DailyBarsResult {
-    pub bars: Vec<Bar<'static>>,
-    pub offset: usize,
-    pub max_count: u64,
-    pub bar_width: usize,
-    pub gap: usize,
-    pub show_all: bool,
-    pub num_days: usize,
-    pub bars_per_width: usize,
-}
-
-pub(crate) fn build_daily_bars(
-    data: &crate::models::AggregatedData,
+pub(crate) fn render_daily(
+    frame: &mut Frame,
+    area: Rect,
+    data: &AggregatedData,
     effective_idx: usize,
-    area_width: u16,
-) -> DailyBarsResult {
-    let num_days = data.days.len();
-    let avail = (area_width as usize).saturating_sub(2);
-    let gap = 1usize;
-    let total_gaps = num_days.saturating_sub(1) * gap;
+) {
+    if data.days.is_empty() {
+        let msg = Paragraph::new("No data available")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Daily Activity "),
+            )
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(msg, area);
+        return;
+    }
 
-    let bar_width = if avail > total_gaps {
-        ((avail - total_gaps) / num_days).clamp(1, 12)
-    } else {
-        1usize
-    };
+    let effective_idx = effective_idx.min(data.days.len() - 1);
+    let result = build_daily_bars(data, effective_idx, area.width);
 
-    let bars_per_width = avail / (bar_width + gap);
-    let show_all = bars_per_width >= num_days;
+    let chart = BarChart::new(result.bars)
+        .block(
+            Block::default()
+                .title(format!(
+                    " Daily Activity  [{}]  (←→ select, Enter → hourly) ",
+                    data.days[effective_idx].date
+                ))
+                .borders(Borders::ALL),
+        )
+        .max(result.max_count)
+        .bar_width(to_u16_clamped(result.bar_width))
+        .bar_gap(to_u16_clamped(result.gap));
 
-    if show_all {
-        let max_count = data
-            .days
-            .iter()
-            .map(|d| d.total_blocked)
-            .max()
-            .unwrap_or(1)
-            .max(1);
-        let bars = data
-            .days
-            .iter()
-            .enumerate()
-            .map(|(i, d)| {
-                let style = if i == effective_idx {
-                    Style::default().fg(Color::Yellow).bg(Color::DarkGray)
-                } else {
-                    Style::default().fg(Color::Cyan)
-                };
-                Bar::with_label(d.date.format("%m/%d").to_string(), d.total_blocked).style(style)
-            })
-            .collect();
-        DailyBarsResult {
-            bars,
-            offset: 0,
-            max_count,
-            bar_width,
-            gap,
-            show_all: true,
-            num_days,
-            bars_per_width,
-        }
-    } else {
-        let max_offset = num_days.saturating_sub(bars_per_width);
-        let offset = effective_idx
-            .saturating_sub(bars_per_width)
-            .saturating_add(1)
-            .min(max_offset);
-        let end = (offset + bars_per_width).min(num_days);
-        let max_count = data.days[offset..end]
-            .iter()
-            .map(|d| d.total_blocked)
-            .max()
-            .unwrap_or(1)
-            .max(1);
-        let bars = data.days[offset..end]
-            .iter()
-            .enumerate()
-            .map(|(i, d)| {
-                let global_i = offset + i;
-                let style = if global_i == effective_idx {
-                    Style::default().fg(Color::Yellow).bg(Color::DarkGray)
-                } else {
-                    Style::default().fg(Color::Cyan)
-                };
-                Bar::with_label(d.date.format("%m/%d").to_string(), d.total_blocked).style(style)
-            })
-            .collect();
-        DailyBarsResult {
-            bars,
-            offset,
-            max_count,
-            bar_width,
-            gap,
-            show_all: false,
-            num_days,
-            bars_per_width,
-        }
+    frame.render_widget(chart, area);
+
+    if !result.show_all && area.height > 0 {
+        let scroll_indicator = format!(
+            " ◄ {} of {} ► ",
+            result.offset + 1,
+            result.num_days.saturating_sub(result.bars_per_width) + 1
+        );
+        let status = Paragraph::new(Line::from(vec![Span::styled(
+            scroll_indicator,
+            Style::default().fg(Color::DarkGray),
+        )]))
+        .alignment(ratatui::layout::Alignment::Center);
+        let status_area = Rect {
+            x: area.x,
+            y: area.y + area.height - 1,
+            width: area.width,
+            height: 1,
+        };
+        frame.render_widget(status, status_area);
     }
 }
 
-pub(crate) fn build_hourly_bars(day: &DailyReport, effective_hour: u32) -> Vec<Bar<'static>> {
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{build_aggregated, DailyReport, HourBreak, IpEntry, PortEntry};
+    use chrono::NaiveDate;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
     use std::collections::HashMap;
 
-    let mut hourly_map: HashMap<u32, u64> = HashMap::new();
-    for h in &day.hourly {
-        hourly_map.insert(h.hour, h.count);
+    fn report(day: u32) -> DailyReport {
+        DailyReport {
+            date: NaiveDate::from_ymd_opt(2026, 6, day).unwrap(),
+            total_blocked: 1,
+            hourly: vec![HourBreak { hour: 10, count: 1 }],
+            top_ips: Vec::<IpEntry>::new(),
+            top_ports: Vec::<PortEntry>::new(),
+            protocols: HashMap::new(),
+        }
     }
 
-    (0..24)
-        .map(|hour| {
-            let count = hourly_map.get(&hour).copied().unwrap_or(0);
-            let label = format!("{hour:02}");
-            let style = if hour == effective_hour {
-                Style::default().fg(Color::Yellow)
-            } else if count > 0 {
-                Style::default().fg(Color::Green)
-            } else {
-                Style::default().fg(Color::DarkGray)
-            };
-            Bar::with_label(label, count).style(style)
-        })
-        .collect()
+    #[test]
+    fn test_render_daily_with_zero_height_does_not_panic() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 4)).unwrap();
+        let data = build_aggregated((1..=30).map(report).collect(), &[]);
+
+        terminal
+            .draw(|frame| render_daily(frame, Rect::new(0, 0, 20, 0), &data, 0))
+            .unwrap();
+    }
 }

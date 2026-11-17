@@ -1,53 +1,146 @@
-### **Planilla de Riesgos para `ufw-report`**
-Aquí tienes la planilla de riesgos reestructurada en formato de lista anidada para facilitar su lectura:
+# Risk Register for `ufw-report`
 
-### **Riesgo 1: Ruptura del parser por cambios en el formato de log**
-* **Categoría:** Técnico
-* **Descripción:** Ruptura del parser por cambios en el formato del log de UFW.
-* **Causas:** Actualizaciones mayores del kernel de Linux, netfilter o UFW que modifiquen la sintaxis de syslog.
-* **Consecuencias:** El TUI muestra datos vacíos, erróneos o la aplicación hace *panic* al no poder hacer match con las Regex.
-* **Probabilidad:** Baja
-* **Impacto:** Crítico
-* **Umbral (Trigger):** Reporte de *Issue* en GitHub de usuarios con Ubuntu >= 26.04.
-* **Plan de Respuesta (Mitigación):** Mantener una suite de tests robusta con muestras de logs de múltiples versiones de distribuciones.
-* **Plan de Contingencia:** Lanzar un *hotfix* degradando gracefully: alertar al usuario del formato desconocido en lugar de crashear.
-* **Observaciones:** El riesgo aumenta si se añaden distribuciones no basadas en Debian.
+Risks are reviewed at every release. Each entry states the current mitigation
+and what to do if it materializes.
 
+## Risk 1: Parser breakage due to log format changes
 
-### **Riesgo 2: Congelamiento de la TUI (UI Freeze)**
-* **Categoría:** Rendimiento
-* **Descripción:** Congelamiento de la TUI al procesar archivos masivos.
-* **Causas:** El archivo `ufw.log` tiene un tamaño excesivo (ej. > 5GB) debido a un ataque DoS sostenido.
-* **Consecuencias:** El hilo principal se bloquea, la interfaz no responde a comandos (`Ctrl+C`), obligando al usuario a matar el proceso.
-* **Probabilidad:** Media
-* **Impacto:** Alto
-* **Umbral (Trigger):** Tiempo de respuesta de la TUI superior a 2 segundos al cambiar de pestaña.
-* **Plan de Respuesta (Mitigación):** Implementar procesamiento asíncrono o multihilo separando el motor de parseo del renderizado TUI.
-* **Plan de Contingencia:** Limitar la lectura por defecto a los últimos 500MB del archivo y requerir un flag explícito para lectura total.
-* **Observaciones:** Fundamental dado el perfil técnico de SysAdmins exigentes.
+- **Category:** Technical
+- **Description:** Parser breakage caused by changes in the UFW log format.
+- **Causes:** Major Linux kernel, netfilter, or UFW updates that change the
+  syslog syntax.
+- **Consequences:** The TUI shows empty or incorrect data, or parsing stops
+  early.
+- **Probability:** Low
+- **Impact:** Critical
+- **Trigger:** GitHub issue reports from users on Ubuntu >= 26.04.
+- **Mitigation:** The parser never panics on an unrecognized block line. It
+  counts it as `unparsed_blocks`, and the coverage summary exposes that counter.
+  The test suite keeps samples from multiple distribution versions.
+- **Contingency:** Release a hotfix with the new format and add the sample as a
+  fixture.
+- **Notes:** The risk increases if non-Debian distributions are added.
 
+## Risk 2: TUI freeze on very large logs
 
-### **Riesgo 3: Falsos positivos en el motor de heurística**
-* **Categoría:** Seguridad / Funcional
-* **Descripción:** Falsos positivos en la detección de amenazas.
-* **Causas:** Parámetros del Risk Score mal calibrados; tráfico normal de la red interna es etiquetado como "Ataque Crítico".
-* **Consecuencias:** Pérdida de confianza del usuario en la herramienta; fatiga de alertas que anula el propósito del dashboard.
-* **Probabilidad:** Alta
-* **Impacto:** Medio
-* **Umbral (Trigger):** Más de 3 reportes en la comunidad indicando detecciones erróneas en tráfico local.
-* **Plan de Respuesta (Mitigación):** Proveer archivos de configuración `.toml` para que el usuario calibre los umbrales de peso heurístico a su entorno.
-* **Plan de Contingencia:** Desactivar temporalmente etiquetas críticas por defecto hasta ajustar el algoritmo localmente.
-* **Observaciones:** El *fingerprinting* estático es propenso a errores en redes complejas.
+- **Category:** Performance
+- **Description:** The TUI freezes while processing massive files.
+- **Causes:** `ufw.log` grows to several gigabytes during a sustained DoS.
+- **Consequences:** The main thread blocks, the interface stops responding, and
+  the user must kill the process.
+- **Probability:** Medium
+- **Impact:** High
+- **Trigger:** TUI response time above 2 seconds when switching tabs.
+- **Mitigation:** The parse cache avoids reparsing unchanged logs, and parser
+  counters make long runs observable before the UI starts.
+- **Contingency:** Document the `--no-cache` and export paths, and use CSV/JSON
+  export instead of the TUI for oversized logs.
+- **Notes:** Asynchronous parsing and streaming aggregation are tracked in the
+  roadmap.
 
+## Risk 3: False positives in the heuristics engine
 
-### **Riesgo 4: Fallos de ejecución por incompatibilidad de librerías (`glibc`)**
-* **Categoría:** Distribución
-* **Descripción:** Fallos de ejecución por falta de dependencias del sistema operativo.
-* **Causas:** Compilación dinámica estándar en Rust ejecutada en servidores corporativos con versiones de Linux muy antiguas (ej. CentOS 7).
-* **Consecuencias:** Error "version `GLIBC_2.XX` not found" al intentar ejecutar el binario, bloqueando la adopción.
-* **Probabilidad:** Media
-* **Impacto:** Alto
-* **Umbral (Trigger):** Reportes de fallo de binarios descargados desde las *Releases* de GitHub.
-* **Plan de Respuesta (Mitigación):** Configurar el CI (GitHub Actions) para compilar versiones estáticas usando `x86_64-unknown-linux-musl`.
-* **Plan de Contingencia:** Documentar claramente el proceso para que los usuarios compilen desde el código fuente con `cargo build`.
-* **Observaciones:** Clave para despliegues *air-gapped* que no se pueden actualizar fácilmente.
+- **Category:** Security / Functional
+- **Description:** False positives in threat detection.
+- **Causes:** Poorly calibrated parameters, or normal internal traffic that
+  resembles scanning or brute force.
+- **Consequences:** Loss of trust and alert fatigue.
+- **Probability:** Medium
+- **Impact:** Medium
+- **Trigger:** More than 3 community reports of incorrect detections on local
+  traffic.
+- **Mitigation:** Every threshold is configurable through an explicit TOML file,
+  CIDRs can be allowlisted, and `min_score` hides low-confidence profiles
+  without discarding their raw data. Scores are labeled as risk indicators, not
+  verdicts.
+- **Contingency:** Ship a release with recalibrated defaults and document the
+  per-environment overrides.
+- **Notes:** Findings are derived only from the log, so context that is not in
+  the log cannot be considered.
+
+## Risk 4: False negatives from hourly bucketing
+
+- **Category:** Functional
+- **Description:** Short bursts that cross an hour boundary or finish inside one
+  hour are aggregated.
+- **Causes:** `LogEntry` stores only date and hour, so the analysis cannot see
+  sub-hour timing.
+- **Consequences:** A fast scan may fall below a per-hour threshold even though
+  it was aggressive.
+- **Probability:** Medium
+- **Impact:** Medium
+- **Trigger:** A reported incident that the tool did not flag.
+- **Mitigation:** Thresholds are conservative by default, and the coverage and
+  ranking sections still surface high-volume sources even without a finding.
+- **Contingency:** Lower the relevant threshold in the config file for the
+  affected environment.
+- **Notes:** Sub-hour resolution requires a schema change and is out of scope for
+  the current analysis version.
+
+## Risk 5: Runtime failures due to `glibc` incompatibility
+
+- **Category:** Distribution
+- **Description:** Dynamically linked binaries fail on older systems.
+- **Causes:** GNU builds require the glibc version of the build host.
+- **Consequences:** `version 'GLIBC_2.XX' not found` blocks adoption.
+- **Probability:** Low
+- **Impact:** High
+- **Trigger:** Failure reports for binaries downloaded from GitHub Releases.
+- **Mitigation:** Every release ships a static
+  `x86_64-unknown-linux-musl` binary, and GNU binaries are built on
+  `ubuntu-22.04` to lower the glibc floor. The README marks musl as the
+  recommended choice for old or air-gapped systems.
+- **Contingency:** Point users to the musl tarball or to `cargo build --release`
+  from source.
+- **Notes:** Critical for air-gapped deployments that cannot install new
+  libraries.
+
+## Risk 6: Tampered or corrupt release artifacts
+
+- **Category:** Supply chain
+- **Description:** A downloaded binary does not match what CI produced.
+- **Causes:** Truncated downloads, mirror interference, or a compromised
+  release asset.
+- **Consequences:** Users run unexpected code with access to firewall logs.
+- **Probability:** Low
+- **Impact:** High
+- **Trigger:** A checksum mismatch, or a report of unexpected behavior from a
+  release binary.
+- **Mitigation:** The release workflow publishes a SHA256 file per tarball, the
+  README documents `sha256sum -c`, and the tag is checked against `Cargo.toml`
+  before publishing.
+- **Contingency:** Delete the affected release, rotate credentials, and publish
+  a new patch release with regenerated checksums.
+- **Notes:** Checksums detect corruption; they do not replace signed releases.
+  Signing is a candidate for a later release.
+
+## Risk 7: Memory exhaustion on oversized logs
+
+- **Category:** Performance
+- **Description:** The process is killed by the OOM killer.
+- **Causes:** All parsed entries are kept in memory for the TUI and exports.
+- **Consequences:** No report is produced and the failure can look like a crash.
+- **Probability:** Medium
+- **Impact:** Medium
+- **Trigger:** A log with millions of blocked entries on a small VPS.
+- **Mitigation:** The cache avoids reparsing, and exports can be produced without
+  the TUI. Parse counters report progress.
+- **Contingency:** Analyze a narrower date range or a rotated copy of the log.
+- **Notes:** Streaming aggregation is tracked in the roadmap.
+
+## Risk 8: Terminal incompatibility in the TUI
+
+- **Category:** Usability
+- **Description:** The TUI renders incorrectly or traps the terminal.
+- **Causes:** Terminals with limited color support, unusual dimensions, or a
+  crash inside the alternate screen.
+- **Consequences:** Unreadable output or a terminal left in raw mode.
+- **Probability:** Low
+- **Impact:** Low
+- **Trigger:** Reports of garbled rendering or a broken prompt after exit.
+- **Mitigation:** A panic hook restores the terminal and reinstalls the original
+  hook. The TUI degrades when space is limited, and every view has a scrolling
+  fallback. Non-interactive export paths avoid the TUI entirely.
+- **Contingency:** Ask the user to reset the terminal (`reset`) and share
+  terminal and size details.
+- **Notes:** The Threat tab was smoke-tested with `TestBackend` in both views.

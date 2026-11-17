@@ -14,7 +14,7 @@ pub(crate) fn render_raw(
     scroll: usize,
 ) {
     let total_entries = entries.len();
-    let max_visible = (area.height as usize).saturating_sub(3).min(20);
+    let max_visible = (area.height as usize).saturating_sub(3);
     let max_scroll = total_entries.saturating_sub(max_visible);
     let scroll = scroll.min(max_scroll);
 
