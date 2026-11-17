@@ -15,6 +15,7 @@ fn make_args(
         from: from.map(std::string::ToString::to_string),
         to: to.map(std::string::ToString::to_string),
         verbose,
+        no_cache: false,
     }
 }
 
@@ -83,7 +84,7 @@ fn test_reversed_dates_returns_error() {
     let result = AppConfig::from_cli(&args);
     assert!(result.is_err());
     let err = format!("{}", result.unwrap_err());
-    assert!(err.contains("debe ser anterior") || err.contains("--from"));
+    assert!(err.contains("must be earlier") || err.contains("--from"));
 }
 
 #[test]
@@ -98,4 +99,12 @@ fn test_invalid_date_format_returns_error() {
     );
     let result = AppConfig::from_cli(&args);
     assert!(result.is_err());
+}
+
+#[test]
+fn test_no_cache_flag_is_propagated() {
+    let mut args = make_args("/var/log/ufw.log", false, None, None, None, false);
+    args.no_cache = true;
+    let config = AppConfig::from_cli(&args).unwrap();
+    assert!(config.no_cache);
 }

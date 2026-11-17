@@ -9,6 +9,7 @@ pub struct AppConfig {
     pub to_date: NaiveDate,
     pub csv_mode: bool,
     pub output: Option<String>,
+    pub no_cache: bool,
 }
 
 impl AppConfig {
@@ -30,7 +31,7 @@ impl AppConfig {
 
         anyhow::ensure!(
             from_date <= to_date,
-            "--from ({from_date}) debe ser anterior o igual a --to ({to_date})",
+            "--from ({from_date}) must be earlier than or equal to --to ({to_date})",
         );
 
         Ok(AppConfig {
@@ -39,6 +40,7 @@ impl AppConfig {
             to_date,
             csv_mode: args.csv,
             output: args.output.clone(),
+            no_cache: args.no_cache,
         })
     }
 }

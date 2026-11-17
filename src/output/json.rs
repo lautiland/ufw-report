@@ -2,6 +2,8 @@ use std::io::Write;
 
 use crate::models::LogEntry;
 
+use super::OutputFormat;
+
 /// # Errors
 ///
 /// Returns an error if serialization or writing fails.
@@ -10,25 +12,29 @@ pub fn write_json<W: Write>(writer: W, entries: &[LogEntry]) -> anyhow::Result<(
     Ok(())
 }
 
+/// Writes entries to `path` in the requested format.
+///
+/// Use `-` to write to stdout.
+///
 /// # Errors
 ///
 /// Returns an error if file creation or writing fails.
-pub fn write_output(entries: &[LogEntry], path: &str) -> anyhow::Result<()> {
+pub fn write_output(entries: &[LogEntry], path: &str, format: OutputFormat) -> anyhow::Result<()> {
     if path == "-" {
-        write_json(std::io::stdout().lock(), entries)?;
-        println!();
+        match format {
+            OutputFormat::Csv => super::csv::write_csv(std::io::stdout().lock(), entries)?,
+            OutputFormat::Json => {
+                write_json(std::io::stdout().lock(), entries)?;
+                println!();
+            }
+        }
         return Ok(());
     }
 
-    if std::path::Path::new(path)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"))
-    {
-        let file = std::fs::File::create(path)?;
-        super::csv::write_csv(file, entries)?;
-    } else {
-        let file = std::fs::File::create(path)?;
-        write_json(file, entries)?;
+    let file = std::fs::File::create(path)?;
+    match format {
+        OutputFormat::Csv => super::csv::write_csv(file, entries)?,
+        OutputFormat::Json => write_json(file, entries)?,
     }
 
     tracing::info!("Report written to {}", path);
