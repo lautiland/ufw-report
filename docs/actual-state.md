@@ -72,7 +72,7 @@ Rust | ratatui + crossterm | clap | chrono | serde | regex | tracing
 
 ## Quality
 
-- 90 tests covering parser, date ranges, cache invalidation, aggregation, output formats, CLI behavior, and TUI navigation
+- 91 tests covering parser, date ranges, cache invalidation, aggregation, output formats, CLI behavior, and TUI navigation
 - GitHub Actions CI with `fmt`, `clippy` pedantic, `test`, and `build`, running on every branch and on pull requests to `main`
 - Panic hook that restores the terminal on crash and reinstalls the original hook afterwards
 

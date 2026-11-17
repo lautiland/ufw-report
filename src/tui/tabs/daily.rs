@@ -27,6 +27,7 @@ pub(crate) fn render_daily(
         return;
     }
 
+    let effective_idx = effective_idx.min(data.days.len() - 1);
     let result = build_daily_bars(data, effective_idx, area.width);
 
     let chart = BarChart::new(result.bars)
@@ -62,5 +63,36 @@ pub(crate) fn render_daily(
             height: 1,
         };
         frame.render_widget(status, status_area);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{build_aggregated, DailyReport, HourBreak, IpEntry, PortEntry};
+    use chrono::NaiveDate;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    use std::collections::HashMap;
+
+    fn report(day: u32) -> DailyReport {
+        DailyReport {
+            date: NaiveDate::from_ymd_opt(2026, 6, day).unwrap(),
+            total_blocked: 1,
+            hourly: vec![HourBreak { hour: 10, count: 1 }],
+            top_ips: Vec::<IpEntry>::new(),
+            top_ports: Vec::<PortEntry>::new(),
+            protocols: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_render_daily_with_zero_height_does_not_panic() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 4)).unwrap();
+        let data = build_aggregated((1..=30).map(report).collect(), &[]);
+
+        terminal
+            .draw(|frame| render_daily(frame, Rect::new(0, 0, 20, 0), &data, 0))
+            .unwrap();
     }
 }

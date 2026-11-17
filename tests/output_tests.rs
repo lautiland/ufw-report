@@ -76,7 +76,7 @@ fn test_write_json_to_file() {
 }
 
 #[test]
-fn test_write_json_default_extension() {
+fn test_write_json_without_extension() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("report"); // no extension → defaults to JSON
     let path_str = path.to_str().unwrap();
