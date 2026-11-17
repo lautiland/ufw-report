@@ -1,8 +1,12 @@
-# Implementation Plan: Module Refactor and Consistency Pass
+# Implementation Plan: Module Refactor, Threat Analysis, and Distribution
+
+> **Status:** historical record. Every phase below is complete. For what the
+> tool does today, see [`actual-state.md`](actual-state.md); for future work,
+> see [`roadmap.md`](roadmap.md).
 
 ## Executive Summary
 
-Reorganize the codebase into feature modules, keep the analysis pipeline data-driven, and close the consistency gaps between code, tests, CLI behavior, TUI hints, and documentation. The threat heuristics engine and the findings export are implemented in Phases 4-8.
+Reorganize the codebase into feature modules, keep the analysis pipeline data-driven, and close the consistency gaps between code, tests, CLI behavior, TUI hints, and documentation. The threat heuristics engine and the findings export are implemented in Phases 4-8. Phase 9 adds precompiled binary releases.
 
 **Core rule:** modules communicate through data (`models/`), not through cross-module references.
 
@@ -165,6 +169,17 @@ that the heuristics need.
 - [x] Add end-to-end CLI tests for both formats, config overrides, and conflicts
 - [x] Document threat analysis, configuration, and export in English
 
+## Phase 9: Binary Releases (Complete)
+
+- [x] Bump the package version to `0.2.0`
+- [x] Add `.github/workflows/release.yml` triggered by `v*` tags
+- [x] Build `x86_64`/`aarch64` GNU and `x86_64` musl binaries
+- [x] Verify that the tag matches `Cargo.toml`
+- [x] Stage tarballs with the binary, README, and LICENSE
+- [x] Publish SHA256 checksums and a GitHub Release
+- [x] Add a locked release build to CI
+- [x] Document the process in `releasing.md`
+
 ## Scope Notes
 
 - v1 buckets heuristics by hour because `LogEntry` stores only `date` and
@@ -192,6 +207,7 @@ cargo build --release
 6. [x] Phase 6: scan/brute-force heuristics and risk scoring
 7. [x] Phase 7: Threats tab with Sources/Networks toggle
 8. [x] Phase 8: JSON/Markdown findings export and documentation
-9. [x] `cargo clippy` clean on every change
-10. [x] `lib.rs` re-exports everything needed by the binary
-11. [x] CI green on every branch and on pull requests
+9. [x] Phase 9: versioned binary releases with checksums
+10. [x] `cargo clippy` clean on every change
+11. [x] `lib.rs` re-exports everything needed by the binary
+12. [x] CI green on every branch and on pull requests

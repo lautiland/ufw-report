@@ -1,6 +1,6 @@
 # Current State of ufw-report
 
-> **Version:** 0.1.0 | **Updated:** 2026-11-17
+> **Version:** 0.2.0 | **Updated:** 2026-11-17
 
 ## What it is
 
@@ -91,13 +91,46 @@ Rust | ratatui + crossterm | clap | chrono | serde | regex | tracing | toml | ip
 ## Quality
 
 - 159 tests covering parser, date ranges, cache invalidation, aggregation, output formats, threat heuristics, findings export, CLI behavior, and TUI rendering/navigation
-- GitHub Actions CI with `fmt`, `clippy` pedantic, `test`, and `build`, running on every branch and on pull requests to `main`
+- GitHub Actions CI with `fmt`, `clippy` pedantic, `test`, and a locked release build, running on every branch and on pull requests to `main`
 - Panic hook that restores the terminal on crash and reinstalls the original hook afterwards
+
+## Distribution
+
+- Precompiled binaries are published on GitHub Releases for tags matching
+  `v*`.
+- Supported targets:
+  - `x86_64-unknown-linux-gnu` — most desktops and servers
+  - `aarch64-unknown-linux-gnu` — ARM64 servers and Raspberry Pi boards
+  - `x86_64-unknown-linux-musl` — static build, recommended for old glibc or
+    air-gapped systems
+- Each release publishes `ufw-report-v<version>-<target>.tar.gz` and a matching
+  `.sha256` file. Tarballs contain the binary, `README.md`, `LICENSE`, and
+  `CHANGELOG.md`.
+- GNU builds run on `ubuntu-22.04` so they link against an older glibc.
+- The release workflow refuses to publish when the tag does not match the
+  version in `Cargo.toml`.
+- The release process is documented in [`releasing.md`](releasing.md).
+
+## Limitations
+
+- Linux only. UFW and its log format are Linux-specific.
+- The parser expects the standard UFW log layout; unknown formats degrade to
+  parser counters instead of crashing, but the affected lines are skipped.
+- The whole log is read into memory unless a valid cache exists. Very large
+  logs need memory proportional to the number of blocked entries.
+- Analysis is synchronous; parsing a multi-gigabyte log blocks the UI until it
+  finishes.
+- Heuristics use one-hour buckets because `LogEntry` stores only date and hour.
+  Sub-hour bursts are aggregated into their hour.
+- No GeoIP, ASN, or external reputation data: findings are derived only from
+  the local log.
+- `.deb` packages, PPAs, and crates.io publication do not exist yet.
 
 ## Security
 
 - Read-only: it never modifies firewall rules
 - No network dependencies and no HTTP servers
+- Never runs `ufw` or any other privileged command
 - Cache files are written under the user's cache directory
 
 ## Dependencies

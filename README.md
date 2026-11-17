@@ -12,17 +12,58 @@ It is lightweight, offline, and read-only: it never changes firewall rules, open
 
 - Linux with UFW
 - Read access to the UFW log (`sudo`, or membership in the `adm` group)
-- Rust 1.82 or newer to build from source
+- No Rust toolchain is required with the precompiled binaries. Building from
+  source needs Rust 1.82 or newer.
 
 ## Installation
+
+Precompiled binaries are published on
+[GitHub Releases](https://github.com/lautiland/ufw-report/releases).
+
+| Target | Use it for |
+|--------|------------|
+| `x86_64-unknown-linux-gnu` | Most desktops, VPS instances, and servers |
+| `aarch64-unknown-linux-gnu` | ARM64 servers and Raspberry Pi boards |
+| `x86_64-unknown-linux-musl` | Static build; recommended for old glibc or air-gapped systems |
+
+```bash
+VERSION=0.2.0
+TARGET=x86_64-unknown-linux-musl
+BASE="https://github.com/lautiland/ufw-report/releases/download/v${VERSION}"
+
+# Download the tarball and its checksum
+curl -LO "${BASE}/ufw-report-v${VERSION}-${TARGET}.tar.gz"
+curl -LO "${BASE}/ufw-report-v${VERSION}-${TARGET}.tar.gz.sha256"
+
+# Verify the download
+sha256sum -c "ufw-report-v${VERSION}-${TARGET}.tar.gz.sha256"
+
+# Extract and install
+tar -xzf "ufw-report-v${VERSION}-${TARGET}.tar.gz"
+sudo install -m 0755 "ufw-report-v${VERSION}-${TARGET}/ufw-report" /usr/local/bin/ufw-report
+```
+
+Pick the musl build when the target system has an older glibc, or when it cannot
+reach the network to install libraries. The GNU builds are built on Ubuntu
+22.04 and need a compatible or newer glibc.
+
+### Build from source
 
 ```bash
 git clone https://github.com/lautiland/ufw-report.git
 cd ufw-report
-cargo build --release
+cargo build --release --locked
 ```
 
 The binary is written to `target/release/ufw-report`.
+
+## Status
+
+`0.2.0` is the first release with precompiled binaries. The threat analysis
+(TUI tab, scoring, and findings export) is feature-complete for its first
+iteration; smaller improvements and packaging are tracked in
+[`docs/roadmap.md`](docs/roadmap.md). The project is pre-1.0, so CLI flags and
+output formats may still change between minor versions.
 
 ## Usage
 
@@ -180,6 +221,21 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
 | `v` | Toggle Sources / Networks in Threats |
 | `Enter` | Open the selected day in Hourly |
 | `q` / `Esc` | Quit |
+
+## Limitations
+
+- Linux only: UFW and its log format are Linux-specific.
+- The parser expects the standard UFW log layout. Unknown formats are reported
+  through parser counters instead of crashing, but those lines are skipped.
+- Analysis is synchronous and keeps parsed entries in memory. Very large logs
+  need memory proportional to the number of blocked entries and delay the UI
+  while they are parsed.
+- Heuristics use one-hour buckets because entries store only date and hour, so
+  sub-hour bursts are aggregated into their hour.
+- There is no GeoIP, ASN, or external reputation data: findings come only from
+  the local log.
+- Only GitHub Releases are supported today. `.deb` packages, PPAs, and
+  crates.io publication are not available yet.
 
 ## Tests
 
