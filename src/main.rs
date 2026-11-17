@@ -8,6 +8,7 @@ use ufw_report::error::UfwError;
 use ufw_report::logging;
 use ufw_report::models::build_aggregated;
 use ufw_report::output::{self, OutputFormat};
+use ufw_report::threat::config::AnalysisConfig;
 
 fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
@@ -16,6 +17,7 @@ fn main() -> anyhow::Result<()> {
 
     let config = AppConfig::from_cli(&args)?;
     let output_format = OutputFormat::resolve(config.csv_mode, config.output.as_deref())?;
+    let analysis_config = AnalysisConfig::load(config.config_path.as_deref())?;
 
     eprintln!(
         "Analyzing UFW logs ({} → {})... ",
@@ -62,7 +64,14 @@ fn main() -> anyhow::Result<()> {
     }
 
     let aggregated = build_aggregated(parse_result.reports, &parse_result.all_entries);
-    ufw_report::tui::run_tui(aggregated, parse_result.all_entries)?;
+    let threat = ufw_report::threat::analyze(
+        &parse_result.all_entries,
+        config.from_date,
+        config.to_date,
+        parse_result.stats,
+        &analysis_config,
+    )?;
+    ufw_report::tui::run_tui(aggregated, parse_result.all_entries, threat)?;
 
     Ok(())
 }

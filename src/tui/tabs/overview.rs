@@ -1,4 +1,4 @@
-use crate::models::AggregatedData;
+use crate::models::{AggregatedData, ThreatReport};
 
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -187,15 +187,45 @@ pub(crate) fn render_top_tables(frame: &mut Frame, area: Rect, data: &Aggregated
     frame.render_widget(ports_table, ports_table_area);
 }
 
-pub(crate) fn render_overview(frame: &mut Frame, area: Rect, data: &AggregatedData, scroll: usize) {
+fn render_risk_line(frame: &mut Frame, area: Rect, threat: &ThreatReport) {
+    let summary = &threat.summary;
+    let top = match (&summary.top_source, summary.top_score) {
+        (Some(source), score) => format!("Top risk {score} ({source})"),
+        (None, _) => "Top risk -".to_string(),
+    };
+    let line = Line::from(vec![
+        Span::styled(
+            " Threat ",
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!(
+            " {top} | {} critical | {} high | {} findings | coverage {:.1}%",
+            summary.critical, summary.high, summary.total_findings, threat.coverage.coverage_pct
+        )),
+    ]);
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+pub(crate) fn render_overview(
+    frame: &mut Frame,
+    area: Rect,
+    data: &AggregatedData,
+    threat: &ThreatReport,
+    scroll: usize,
+) {
     let chunks = Layout::vertical([
+        Constraint::Length(1),
         Constraint::Length(4),
         Constraint::Length(5),
         Constraint::Min(0),
     ])
-    .areas::<3>(area);
-    let [cards_area, proto_area, tables_area] = chunks;
+    .areas::<4>(area);
+    let [risk_area, cards_area, proto_area, tables_area] = chunks;
 
+    render_risk_line(frame, risk_area, threat);
     render_summary_cards(frame, cards_area, data);
     render_protocol_gauges(frame, proto_area, data, scroll);
     render_top_tables(frame, tables_area, data);

@@ -20,7 +20,7 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use crate::models::{AggregatedData, LogEntry};
+use crate::models::{AggregatedData, LogEntry, ThreatReport};
 
 use self::app::{App, Tab};
 
@@ -34,7 +34,11 @@ fn restore_terminal() {
 /// # Errors
 ///
 /// Returns an error if the terminal cannot be initialized or events fail to read.
-pub fn run_tui(data: AggregatedData, entries: Vec<LogEntry>) -> anyhow::Result<()> {
+pub fn run_tui(
+    data: AggregatedData,
+    entries: Vec<LogEntry>,
+    threat: ThreatReport,
+) -> anyhow::Result<()> {
     let original_hook: Arc<Mutex<Option<PanicHook>>> =
         Arc::new(Mutex::new(Some(std::panic::take_hook())));
     let hook_for_panic = Arc::clone(&original_hook);
@@ -47,7 +51,7 @@ pub fn run_tui(data: AggregatedData, entries: Vec<LogEntry>) -> anyhow::Result<(
         }
     }));
 
-    let result = run_tui_inner(data, entries);
+    let result = run_tui_inner(data, entries, threat);
 
     let _ = std::panic::take_hook();
     if let Ok(mut guard) = original_hook.lock() {
@@ -63,7 +67,11 @@ pub fn run_tui(data: AggregatedData, entries: Vec<LogEntry>) -> anyhow::Result<(
     result
 }
 
-fn run_tui_inner(data: AggregatedData, entries: Vec<LogEntry>) -> anyhow::Result<()> {
+fn run_tui_inner(
+    data: AggregatedData,
+    entries: Vec<LogEntry>,
+    threat: ThreatReport,
+) -> anyhow::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     stdout.execute(EnterAlternateScreen)?;
@@ -71,7 +79,7 @@ fn run_tui_inner(data: AggregatedData, entries: Vec<LogEntry>) -> anyhow::Result
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(data, entries);
+    let mut app = App::new(data, entries, threat);
 
     while app.running {
         terminal.draw(|frame| ui(frame, &mut app))?;
@@ -155,6 +163,7 @@ fn handle_vertical(app: &mut App, step: usize, direction: i8) {
         }
         Tab::Hourly => move_hour(app, direction > 0),
         Tab::Raw => app.raw_scroll = apply_scroll(app.raw_scroll, step, direction),
+        Tab::Threats => app.move_threat_selection(step, direction > 0),
         Tab::Daily => {}
     }
 }
@@ -166,6 +175,7 @@ fn handle_page(app: &mut App, step: usize, direction: i8) {
         }
         Tab::Hourly => app.hourly_scroll = apply_scroll(app.hourly_scroll, step, direction),
         Tab::Raw => app.raw_scroll = apply_scroll(app.raw_scroll, step, direction),
+        Tab::Threats => app.move_threat_selection(step, direction > 0),
         Tab::Daily => {}
     }
 }
@@ -181,6 +191,8 @@ fn handle_events(app: &mut App) -> io::Result<()> {
             KeyCode::Char('2') => set_tab(app, Tab::Daily),
             KeyCode::Char('3') => set_tab(app, Tab::Hourly),
             KeyCode::Char('4') => set_tab(app, Tab::Raw),
+            KeyCode::Char('5') => set_tab(app, Tab::Threats),
+            KeyCode::Char('v') if app.current_tab == Tab::Threats => app.toggle_threats_view(),
             KeyCode::Tab => set_tab(app, app.current_tab.next()),
             KeyCode::BackTab => set_tab(app, app.current_tab.prev()),
             KeyCode::Left => {
@@ -251,7 +263,13 @@ fn ui(frame: &mut Frame, app: &mut App) {
     render_header(frame, header_area, app);
     match app.current_tab {
         Tab::Overview => {
-            tabs::overview::render_overview(frame, content_area, &app.data, app.scroll);
+            tabs::overview::render_overview(
+                frame,
+                content_area,
+                &app.data,
+                &app.threat,
+                app.scroll,
+            );
         }
         Tab::Daily => {
             let last = app.data.days.len().saturating_sub(1);
@@ -260,6 +278,13 @@ fn ui(frame: &mut Frame, app: &mut App) {
         }
         Tab::Hourly => tabs::hourly::render_hourly(frame, content_area, app),
         Tab::Raw => tabs::raw::render_raw(frame, content_area, &app.entries, app.raw_scroll),
+        Tab::Threats => tabs::threats::render_threats(
+            frame,
+            content_area,
+            &app.threat,
+            app.threats_view,
+            app.threat_selection,
+        ),
     }
     render_status(frame, status_area, app);
 }
