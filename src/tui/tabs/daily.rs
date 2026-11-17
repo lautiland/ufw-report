@@ -44,7 +44,7 @@ pub(crate) fn render_daily(
 
     frame.render_widget(chart, area);
 
-    if !result.show_all {
+    if !result.show_all && area.height > 0 {
         let scroll_indicator = format!(
             " ◄ {} of {} ► ",
             result.offset + 1,
