@@ -10,7 +10,4 @@ pub enum UfwError {
 
     #[error("Permission denied reading {path}. Hint: {hint}")]
     PermissionDenied { path: String, hint: String },
-
-    #[error("Server error: {0}")]
-    Server(String),
 }

@@ -2,8 +2,14 @@
 name = "ufw-report"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.82"
 license = "MIT"
 description = "CLI tool that reads UFW logs, analyzes blocked traffic, and shows an interactive TUI report"
+repository = "https://github.com/lautiland/ufw-report"
+homepage = "https://github.com/lautiland/ufw-report"
+readme = "README.md"
+keywords = ["ufw", "firewall", "logs", "tui", "security"]
+categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
