@@ -342,3 +342,67 @@ pub(crate) fn render_threats(
     }
     render_detail(frame, detail_area, threat, view, selection);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Direction, LogEntry, ParseStats};
+    use crate::threat::config::AnalysisConfig;
+    use chrono::NaiveDate;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    fn day() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 6, 28).unwrap()
+    }
+
+    fn scan_entries() -> Vec<LogEntry> {
+        (1..=10)
+            .map(|port| LogEntry {
+                date: day(),
+                hour: 10,
+                src_ip: "203.0.113.10".to_string(),
+                dst_ip: Some("192.168.1.1".to_string()),
+                src_port: None,
+                dst_port: Some(port),
+                protocol: Some("TCP".to_string()),
+                direction: Direction::Incoming,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_render_threats_views() {
+        let mut config = AnalysisConfig::default();
+        config.thresholds.subnet_min_sources = 1;
+        let report = crate::threat::analyze(
+            &scan_entries(),
+            day(),
+            day(),
+            ParseStats::default(),
+            &config,
+        )
+        .unwrap();
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        for view in [ThreatsView::Sources, ThreatsView::Networks] {
+            terminal
+                .draw(|frame| render_threats(frame, frame.area(), &report, view, 0))
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_render_empty_threats_views() {
+        let report = ThreatReport::empty(day(), day());
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        for view in [ThreatsView::Sources, ThreatsView::Networks] {
+            terminal
+                .draw(|frame| render_threats(frame, frame.area(), &report, view, 3))
+                .unwrap();
+        }
+    }
+}
