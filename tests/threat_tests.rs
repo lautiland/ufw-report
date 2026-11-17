@@ -181,6 +181,37 @@ fn test_findings_and_output_cannot_share_stdout() {
 }
 
 #[test]
+fn test_findings_and_csv_cannot_share_stdout() {
+    let env = TestEnv::new("threat_scan.log");
+    let mut command = env.command();
+    command.args(["--findings", "-", "--csv"]);
+
+    let output = run(&mut command);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("cannot both write to stdout"));
+}
+
+#[test]
+fn test_invalid_config_file_fails() {
+    let env = TestEnv::new("threat_scan.log");
+    let config_path = env.path("analysis.toml");
+    std::fs::write(&config_path, "[subnets]\nipv4_prefix = 64\n").unwrap();
+    let mut command = env.command();
+    command.args([
+        "--config",
+        config_path.to_str().unwrap(),
+        "--findings",
+        env.path("findings.json").to_str().unwrap(),
+    ]);
+
+    let output = run(&mut command);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("ipv4_prefix"));
+}
+
+#[test]
 fn test_findings_and_entry_export_can_be_combined() {
     let env = TestEnv::new("threat_scan.log");
     let findings_path = env.path("findings.json");

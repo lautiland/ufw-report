@@ -19,10 +19,12 @@ fn main() -> anyhow::Result<()> {
     let output_format = OutputFormat::resolve(config.csv_mode, config.output.as_deref())?;
     let analysis_config = AnalysisConfig::load(config.config_path.as_deref())?;
 
-    if let (Some(findings), Some(output)) = (config.findings.as_deref(), config.output.as_deref()) {
+    if config.findings.as_deref() == Some("-") {
+        let entry_export_to_stdout =
+            output_format.is_some() && config.output.as_deref().unwrap_or("-") == "-";
         anyhow::ensure!(
-            !(findings == "-" && output == "-"),
-            "--findings - and -o - cannot both write to stdout"
+            !entry_export_to_stdout,
+            "--findings - and the entry export cannot both write to stdout"
         );
     }
 

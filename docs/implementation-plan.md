@@ -159,7 +159,7 @@ that the heuristics need.
 
 - [x] Add `output/findings.rs` with JSON and Markdown renderers
 - [x] Resolve Markdown from the `.md` extension; JSON otherwise
-- [x] Support `--findings -` for stdout and reject it together with `-o -`
+- [x] Support `--findings -` for stdout and reject sharing stdout with an entry export
 - [x] Allow findings and entry exports in the same run
 - [x] Add scan, brute-force, distributed, persistent, and clean fixtures
 - [x] Add end-to-end CLI tests for both formats, config overrides, and conflicts

@@ -133,7 +133,8 @@ profiles, and network groups):
 - Paths ending in `.md` produce Markdown.
 - Any other path produces pretty-printed JSON.
 - `-` writes to stdout.
-- `--findings -` and `-o -` cannot be used together.
+- `--findings -` cannot be combined with an entry export that also writes to
+  stdout (`-o -`, or `--csv` without `-o`).
 
 When `--findings` is used the tool writes the file and exits, unless an entry
 export (`--csv` or `-o`) is also requested, in which case both files are written.
