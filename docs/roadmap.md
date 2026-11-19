@@ -47,35 +47,51 @@ out of scope. For the current behavior of the tool, see
 
 ## Next
 
-Candidates are ordered by expected value, not by commitment. None of them is
-scheduled.
+The next committed milestone is **v0.3.0 — Forensic Triage**. It narrows the
+product around rotated logs, sub-hour resolution, chain of custody, and MITRE
+ATT&CK mapping. The work is broken down in
+[`wbs-v0.3.0.md`](wbs-v0.3.0.md).
 
-### Distribution
+### v0.3.0 — Forensic Triage (committed)
 
-- `.deb` packages for Ubuntu/Debian, built from the existing tarballs
-- PPA/Launchpad publication once the manual `.deb` flow is stable
-- `cargo install ufw-report` via crates.io
+**Goal:** make `ufw-report` a credible first-response triage kit for UFW logs,
+without turning it into a SIEM or a packet-level forensic suite.
 
-### Analysis depth
+#### Multi-file ingestion and `.gz`
 
-- Volume-based anomaly detection (possible DoS) on top of the current heuristics
-- Configurable scoring weights per finding type
-- Sub-hour time resolution, which requires extending the `LogEntry` schema
-- Optional TCP flags and TTL parsing for offline fingerprinting
+- Ingest `ufw.log`, `ufw.log.1`, and `ufw.log.*.gz` as one chronological stream
+- Add `--include-rotated` or repeated input paths to discover rotated files
+- Decompress `.gz` in streaming mode, with configurable size limits
+- Record per-file parse counters and coverage gaps
 
-### Interface
+#### Sub-hour resolution
 
-- Isolate an incident directly from the Daily chart and open it in a filtered
-  Raw/Threats view
-- Export blocking suggestions (`ufw deny` lines) for the user to review and run
-  manually; the tool itself stays read-only
-- Threat tags on the Overview and Raw tabs
+- Store full timestamps with second precision in `LogEntry`
+- Replace fixed one-hour buckets with configurable sliding windows
+- Detect short scans, sweeps, and brute-force bursts that cross an hour boundary
 
-### Performance
+#### Chain of custody and integrity
 
-- Asynchronous or multithreaded parsing so the TUI never blocks on very large
-  logs
-- Streaming aggregation to reduce peak memory on multi-gigabyte logs
+- Compute SHA-256 for every raw file read
+- Record execution metadata: UTC timestamp, hostname, tool version, and TOML hash
+- Promote severe coverage anomalies (`missing_hours`, `out_of_order`,
+  `future_dated`) to integrity findings in the report
+
+#### MITRE ATT&CK and evidence
+
+- Map findings to their technique where applicable (`T1046`, `T1018`, `T1110`);
+  leave the field empty for generic persistence and integrity findings
+- Include the exact start/end timestamp range, plus key ports/protocols when
+  applicable, for manual verification
+- Keep the report explicitly framed as heuristic triage, not legal proof
+
+### Backlog (v0.4.0+)
+
+- Isolate an incident directly from Daily/Threats and export filtered raw evidence
+- Optional passive fingerprinting (TCP flags and TTL) to enrich `T1046`
+- Asynchronous or streaming parsing, plus `.deb`/crates.io distribution
+- Generator of `ufw deny` commands for manual review (deprioritized on this
+  branch; the tool stays read-only)
 
 ## Out of scope
 
@@ -83,6 +99,9 @@ scheduled.
 - Contacting reputation feeds, GeoIP/ASN services, or any remote API
 - Acting as a long-running daemon, IDS, or log shipper
 - Being a replacement for a SIEM or a full packet-level analysis stack
+- Deep egress (`OUT=`) threat analysis or C2 beaconing detection. `OUT=` remains
+  in counters and the Raw view, but the heuristic engine focuses exclusively on
+  inbound perimeter traffic to keep one coherent data model.
 - Snap, Flatpak, or Docker as a primary distribution channel
 
 ## How to propose work

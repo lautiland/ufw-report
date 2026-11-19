@@ -77,7 +77,12 @@ sha256sum -c ufw-report-v0.2.0-x86_64-unknown-linux-musl.tar.gz.sha256
 
 ## Release checklist
 
-1. Update `CHANGELOG.md` with the new version and date.
+1. Update the release documentation:
+   - `CHANGELOG.md` with the new version and date.
+   - `docs/actual-state.md` to match the behavior shipped in the release.
+   - `README.md` with new flags, features, limitations, and examples.
+   - `docs/roadmap.md`, `docs/risk-analysis.md`, and the active WBS to reflect
+     what shipped and what moved to the backlog.
 2. Bump `version` in `Cargo.toml`.
 3. Run `cargo update` only if dependencies changed, then commit the updated
    `Cargo.lock`.
