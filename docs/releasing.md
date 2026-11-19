@@ -108,7 +108,14 @@ sha256sum -c ufw-report-v0.2.0-x86_64-unknown-linux-musl.tar.gz.sha256
    ```
 
 9. If a target fails, fix the workflow or the code and publish a patch release
-   instead of re-pointing the tag.
+   instead of re-pointing the tag. If nothing was published (no release and no
+   assets), delete the orphan tag once the patch ships so nobody follows a dead
+   download link:
+
+   ```bash
+   git push origin :refs/tags/v0.2.0
+   git tag -d v0.2.0
+   ```
 
 ## Manual fallback
 
