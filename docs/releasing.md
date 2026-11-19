@@ -18,11 +18,16 @@ manual trigger; nothing is uploaded from a workstation.
 |--------|--------|---------------|-------|
 | `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | none | Lower glibc floor than `ubuntu-latest` |
 | `aarch64-unknown-linux-gnu` | `ubuntu-22.04` | `gcc-aarch64-linux-gnu`, `libc6-dev-arm64-cross` | ARM64 servers and Raspberry Pi |
-| `x86_64-unknown-linux-musl` | `ubuntu-22.04` | `musl-tools` | Fully static; recommended for air-gapped systems |
+| `x86_64-unknown-linux-musl` | `ubuntu-22.04` | none | Static-PIE using the musl bundled with the Rust toolchain |
 
 The aarch64 cross toolchain needs both packages: the compiler alone cannot link
 without the target's C library development files, and the build fails with
 `cannot find Scrt1.o` and `cannot find crti.o`.
+
+The musl target uses the self-contained musl that ships with the Rust target and
+links statically. Do not override its linker with `musl-gcc`: that links against
+the system musl and produces a dynamically linked binary that needs
+`/lib/ld-musl-x86_64.so.1` at runtime, which defeats the static artifact.
 
 GNU binaries are linked dynamically and require a compatible glibc. Musl
 binaries are static and do not depend on the host's C library.
