@@ -1,7 +1,8 @@
 # Risk Register for `ufw-report`
 
-Risks are reviewed at every release. Each entry states the current mitigation
-and what to do if it materializes.
+Risks are reviewed at every release. Each entry states the current mitigation,
+or the planned mitigation when the risk is tied to an upcoming release, and what
+to do if it materializes.
 
 ## Risk 1: Parser breakage due to log format changes
 
@@ -28,15 +29,19 @@ and what to do if it materializes.
 - **Causes:** `ufw.log` grows to several gigabytes during a sustained DoS.
 - **Consequences:** The main thread blocks, the interface stops responding, and
   the user must kill the process.
-- **Probability:** Medium
+- **Probability:** High
 - **Impact:** High
 - **Trigger:** TUI response time above 2 seconds when switching tabs.
 - **Mitigation:** The parse cache avoids reparsing unchanged logs, and parser
-  counters make long runs observable before the UI starts.
-- **Contingency:** Document the `--no-cache` and export paths, and use CSV/JSON
-  export instead of the TUI for oversized logs.
-- **Notes:** Asynchronous parsing and streaming aggregation are tracked in the
-  roadmap.
+  counters make long runs observable before the UI starts. v0.3.0 adds streaming
+  decompression, per-file progress counters, and configurable input limits.
+- **Contingency:** Document the `--no-cache` and export paths, use CSV/JSON
+  export instead of the TUI for oversized logs, or analyze one rotated file at a
+  time.
+- **Notes:** Exposure increases with multi-file ingestion: reading several
+  rotated `.gz` files at once can multiply the number of entries held in memory
+  by 5x to 10x. Asynchronous parsing and streaming aggregation remain tracked in
+  the roadmap.
 
 ## Risk 3: False positives in the heuristics engine
 
@@ -70,12 +75,16 @@ and what to do if it materializes.
 - **Probability:** Medium
 - **Impact:** Medium
 - **Trigger:** A reported incident that the tool did not flag.
-- **Mitigation:** Thresholds are conservative by default, and the coverage and
-  ranking sections still surface high-volume sources even without a finding.
+- **Status:** In active mitigation for v0.3.0.
+- **Mitigation:** v0.3.0 replaces the fixed hourly buckets with second-precision
+  timestamps and configurable sliding windows. Until that ships, thresholds are
+  conservative by default, and the coverage and ranking sections still surface
+  high-volume sources even without a finding.
 - **Contingency:** Lower the relevant threshold in the config file for the
   affected environment.
-- **Notes:** Sub-hour resolution requires a schema change and is out of scope for
-  the current analysis version.
+- **Notes:** The schema change is no longer out of scope: it is tracked as WBS
+  1.1 and 3.1 for v0.3.0. Risk 4 should move to Low once the sliding-window
+  engine ships and its fixtures pass.
 
 ## Risk 5: Runtime failures due to `glibc` incompatibility
 
@@ -118,15 +127,21 @@ and what to do if it materializes.
 
 - **Category:** Performance
 - **Description:** The process is killed by the OOM killer.
-- **Causes:** All parsed entries are kept in memory for the TUI and exports.
+- **Causes:** All parsed entries are kept in memory for the TUI and exports, and
+  multi-file ingestion adds the contents of every rotated `.gz` file to the same
+  working set.
 - **Consequences:** No report is produced and the failure can look like a crash.
-- **Probability:** Medium
-- **Impact:** Medium
-- **Trigger:** A log with millions of blocked entries on a small VPS.
+- **Probability:** High
+- **Impact:** High
+- **Trigger:** A log set with millions of blocked entries across rotated files on
+  a small VPS.
 - **Mitigation:** The cache avoids reparsing, and exports can be produced without
-  the TUI. Parse counters report progress.
-- **Contingency:** Analyze a narrower date range or a rotated copy of the log.
-- **Notes:** Streaming aggregation is tracked in the roadmap.
+  the TUI. Parse counters report progress. v0.3.0 adds streaming decompression,
+  per-file processing, and configurable input limits.
+- **Contingency:** Analyze a narrower date range, one rotated file at a time, or
+  a smaller input set.
+- **Notes:** The entry count can grow 5x to 10x when several rotated files are
+  read together. Streaming aggregation remains tracked in the roadmap.
 
 ## Risk 8: Terminal incompatibility in the TUI
 
@@ -144,3 +159,68 @@ and what to do if it materializes.
 - **Contingency:** Ask the user to reset the terminal (`reset`) and share
   terminal and size details.
 - **Notes:** The Threat tab was smoke-tested with `TestBackend` in both views.
+
+## Risk 9: Corrupted `.gz` files or decompression bombs
+
+- **Category:** Technical / Performance
+- **Description:** A rotated log cannot be decompressed, or a compressed file
+  expands far beyond its expected size.
+- **Causes:** `.gz` files truncated by an abrupt reboot, partially written
+  archives, or malicious or oversized archives.
+- **Consequences:** The analysis aborts, CPU or memory is exhausted, or part of
+  the evidence is silently omitted.
+- **Probability:** Medium
+- **Impact:** High
+- **Trigger:** A decompression error, an unusual expansion ratio, or a memory
+  spike while reading a rotated file.
+- **Mitigation:** Decompress in streaming mode with a configurable size limit and
+  safe line-by-line reads. A corrupt `.gz` is recorded in the coverage counters
+  and does not abort the analysis of the remaining files. No partial file is
+  presented as complete evidence.
+- **Contingency:** Skip the affected file, report it as a coverage gap, inspect
+  the archive manually, and rerun the analysis with the remaining inputs.
+- **Notes:** Size limits and failure behavior must be documented before v0.3.0
+  ships.
+
+## Risk 10: Multi-file cache invalidation bugs
+
+- **Category:** Technical / Functional
+- **Description:** The parse cache returns stale or duplicated data when the
+  input set contains more than one file.
+- **Causes:** The cache is keyed by a single file (`<hash>.json`); a change in any
+  rotated file, or a new rotation, can leave the key unchanged.
+- **Consequences:** The report shows outdated or duplicated entries, which is
+  especially dangerous in a forensic context.
+- **Probability:** Medium
+- **Impact:** High
+- **Trigger:** A cache hit after a rotation, or duplicate counts in the coverage
+  summary.
+- **Mitigation:** Derive the cache key from the ordered set of `(path, size,
+  mtime)` for every input file, or cache each file independently. Increment
+  `cache_version` and add rotation add/remove/change tests.
+- **Contingency:** Disable the cache with `--no-cache`, remove the cache
+  directory, and rerun the analysis.
+- **Notes:** Cache invalidation is part of WBS 1.2 and must ship with the
+  multi-file ingestion work.
+
+## Risk 11: Misinterpretation of forensic reports as legal proof
+
+- **Category:** Functional / Legal
+- **Description:** Users treat the SHA-256 hashes and MITRE ATT&CK mapping as a
+  complete judicial or disciplinary expert report.
+- **Causes:** The report uses forensic terminology (chain of custody, evidence,
+  hashes) that can suggest a stronger legal guarantee than the tool provides.
+- **Consequences:** False confidence, reputational damage, or a report challenged
+  in a legal or HR process.
+- **Probability:** Medium
+- **Impact:** High
+- **Trigger:** A report is used in a legal or disciplinary process without
+  independent validation.
+- **Mitigation:** State explicitly in the `--findings` header (JSON and Markdown)
+  and in the README that findings are heuristic triage indicators. The hash
+  certifies the integrity of the input read during that execution; it does not
+  prove that the file was not modified before or after. The tool is not a
+  substitute for a full forensic investigation.
+- **Contingency:** Clarify the scope in support responses and recommend
+  independent forensic validation before any legal use.
+- **Notes:** Review the disclaimer whenever the findings schema changes.
