@@ -12,6 +12,9 @@ Before 1.0.0, minor versions may include breaking changes.
 - Release workflow installs `libc6-dev-arm64-cross`, so the
   `aarch64-unknown-linux-gnu` build can link (`Scrt1.o` and `crti.o` are now
   found) and the GitHub Release is published for all three targets.
+- The `x86_64-unknown-linux-musl` artifact is fully static again. The build no
+  longer overrides the linker with `musl-gcc`, which produced a dynamically
+  linked binary that required `/lib/ld-musl-x86_64.so.1` on the target host.
 
 ### Changed
 
