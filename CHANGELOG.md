@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format is based on
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from 1.0.0.
 Before 1.0.0, minor versions may include breaking changes.
 
+## [0.2.1] - 2026-11-18
+
+### Fixed
+
+- Release workflow installs `libc6-dev-arm64-cross`, so the
+  `aarch64-unknown-linux-gnu` build can link (`Scrt1.o` and `crti.o` are now
+  found) and the GitHub Release is published for all three targets.
+
+### Changed
+
+- The release workflow can be triggered manually with `workflow_dispatch` to
+  build and package every target as a dry run, without publishing a release.
+- The packaged version comes from `Cargo.toml` on dry runs and from the tag on
+  tagged releases.
+
 ## [0.2.0] - 2026-11-17
 
 ### Added
@@ -52,5 +67,6 @@ Before 1.0.0, minor versions may include breaking changes.
 - Range-safe JSON parse cache and `--no-cache`.
 - GitHub Actions CI with formatting, linting, tests, and a build.
 
+[0.2.1]: https://github.com/lautiland/ufw-report/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/lautiland/ufw-report/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lautiland/ufw-report/releases/tag/v0.1.0

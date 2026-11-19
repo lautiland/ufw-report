@@ -1,6 +1,6 @@
 # Current State of ufw-report
 
-> **Version:** 0.2.0 | **Updated:** 2026-11-17
+> **Version:** 0.2.1 | **Updated:** 2026-11-18
 
 ## What it is
 

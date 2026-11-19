@@ -27,7 +27,7 @@ Precompiled binaries are published on
 | `x86_64-unknown-linux-musl` | Static build; recommended for old glibc or air-gapped systems |
 
 ```bash
-VERSION=0.2.0
+VERSION=0.2.1
 TARGET=x86_64-unknown-linux-musl
 BASE="https://github.com/lautiland/ufw-report/releases/download/v${VERSION}"
 
@@ -59,11 +59,11 @@ The binary is written to `target/release/ufw-report`.
 
 ## Status
 
-`0.2.0` is the first release with precompiled binaries. The threat analysis
-(TUI tab, scoring, and findings export) is feature-complete for its first
-iteration; smaller improvements and packaging are tracked in
-[`docs/roadmap.md`](docs/roadmap.md). The project is pre-1.0, so CLI flags and
-output formats may still change between minor versions.
+`0.2.1` is the current release. It ships precompiled binaries for the three
+supported targets. The threat analysis (TUI tab, scoring, and findings export)
+is feature-complete for its first iteration; smaller improvements and packaging
+are tracked in [`docs/roadmap.md`](docs/roadmap.md). The project is pre-1.0, so
+CLI flags and output formats may still change between minor versions.
 
 ## Usage
 

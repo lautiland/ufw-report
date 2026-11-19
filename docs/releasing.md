@@ -17,11 +17,32 @@ manual trigger; nothing is uploaded from a workstation.
 | Target | Runner | Extra tooling | Notes |
 |--------|--------|---------------|-------|
 | `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | none | Lower glibc floor than `ubuntu-latest` |
-| `aarch64-unknown-linux-gnu` | `ubuntu-22.04` | `gcc-aarch64-linux-gnu` | ARM64 servers and Raspberry Pi |
+| `aarch64-unknown-linux-gnu` | `ubuntu-22.04` | `gcc-aarch64-linux-gnu`, `libc6-dev-arm64-cross` | ARM64 servers and Raspberry Pi |
 | `x86_64-unknown-linux-musl` | `ubuntu-22.04` | `musl-tools` | Fully static; recommended for air-gapped systems |
+
+The aarch64 cross toolchain needs both packages: the compiler alone cannot link
+without the target's C library development files, and the build fails with
+`cannot find Scrt1.o` and `cannot find crti.o`.
 
 GNU binaries are linked dynamically and require a compatible glibc. Musl
 binaries are static and do not depend on the host's C library.
+
+## Dry run
+
+The workflow can also be started manually:
+
+```bash
+gh workflow run Release --ref main
+```
+
+A manual run builds and packages all three targets, uploads the tarballs as
+workflow artifacts, and skips both the tag/version check and the GitHub Release
+job. Use it to confirm a workflow change before tagging. The packaged version
+comes from `Cargo.toml` in this mode, so a dry run reflects the version that
+will be released.
+
+`workflow_dispatch` only appears once the workflow file exists on the default
+branch, so merge the workflow change before the first dry run.
 
 ## Artifacts
 
@@ -73,7 +94,8 @@ sha256sum -c ufw-report-v0.2.0-x86_64-unknown-linux-musl.tar.gz.sha256
    ```
 
 7. Watch the **Release** workflow. It verifies the tag, builds the three
-   targets, packages the tarballs, and publishes the GitHub Release.
+   targets, packages the tarballs, and publishes the GitHub Release. If the
+   workflow itself changed, run the dry run first (see above).
 8. Download one artifact and verify the checksum and the binary:
 
    ```bash
