@@ -237,6 +237,22 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
 - Only GitHub Releases are supported today. `.deb` packages, PPAs, and
   crates.io publication are not available yet.
 
+## Development workflow
+
+This repository uses [GitHub Spec Kit](https://github.github.com/spec-kit/) for
+spec-driven development. The project constitution lives in
+[`.specify/memory/constitution.md`](.specify/memory/constitution.md), and
+change-level specifications, plans, and tasks live under `specs/`.
+
+- New behavior starts with `/speckit.specify` and follows the cycle documented
+  in [`docs/spec-kit.md`](docs/spec-kit.md).
+- Shipped behavior is documented in
+  [`docs/actual-state.md`](docs/actual-state.md).
+- Product direction and scope are in [`docs/roadmap.md`](docs/roadmap.md).
+
+The required local gates are `cargo fmt`, pedantic `cargo clippy`, `cargo test`,
+and a locked release build. See [`docs/releasing.md`](docs/releasing.md).
+
 ## Tests
 
 ```bash

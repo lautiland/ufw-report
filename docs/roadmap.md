@@ -1,9 +1,14 @@
 # Roadmap
 
-This document is the single source of truth for the future of `ufw-report`.
-It lists what is already shipped, what is planned next, and what is explicitly
-out of scope. For the current behavior of the tool, see
+This document is the single source of truth for the product direction of
+`ufw-report`. It lists what is already shipped, what is planned next, and what
+is explicitly out of scope. For the current behavior of the tool, see
 [`actual-state.md`](actual-state.md).
+
+> **Spec Kit:** change-level specifications, plans, and tasks live under
+> `specs/` (see [`spec-kit.md`](spec-kit.md)). This roadmap remains the
+> authority for direction, scope, and sequencing; it should link to the spec
+> once a roadmap item becomes active work.
 
 ## Shipped
 
@@ -49,10 +54,15 @@ out of scope. For the current behavior of the tool, see
 
 The next committed milestone is **v0.3.0 — Forensic Triage**. It narrows the
 product around rotated logs, sub-hour resolution, chain of custody, and MITRE
-ATT&CK mapping. The work is broken down in
-[`wbs-v0.3.0.md`](wbs-v0.3.0.md).
+ATT&CK mapping. The user-facing behavior is specified in
+[`specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md). The
+technical work packages remain in [`wbs-v0.3.0.md`](wbs-v0.3.0.md) as planning
+input for the Spec Kit plan and tasks.
 
 ### v0.3.0 — Forensic Triage (committed)
+
+**Specification:**
+[`specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md)
 
 **Goal:** make `ufw-report` a credible first-response triage kit for UFW logs,
 without turning it into a SIEM or a packet-level forensic suite.

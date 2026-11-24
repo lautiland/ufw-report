@@ -1,0 +1,5 @@
+!.specify/
+!.specify/**
+.specify/**/local-config.yml
+.specify/**/*-config.local.yml
+.specify/workflows/runs/

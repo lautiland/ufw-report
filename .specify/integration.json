@@ -1,0 +1,19 @@
+{
+  "version": "1.4.4",
+  "integration_state_schema": 1,
+  "installed_integrations": [
+    "opencode"
+  ],
+  "integration_settings": {
+    "opencode": {
+      "script": "sh",
+      "raw_options": "--configure-ignore-file",
+      "parsed_options": {
+        "configure_ignore_file": true
+      },
+      "invoke_separator": "."
+    }
+  },
+  "integration": "opencode",
+  "default_integration": "opencode"
+}

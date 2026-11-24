@@ -2,6 +2,12 @@
 
 > **Status:** Planned | **Target version:** 0.3.0 | **Roadmap:**
 > [`roadmap.md`](roadmap.md)
+>
+> **Legacy planning artifact (pre-Spec Kit).** The behavior specification now
+> lives at
+> [`../specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md)
+> (see [`spec-kit.md`](spec-kit.md)). This WBS is retained as technical input for
+> the Spec Kit plan and tasks and must not be updated in parallel with them.
 
 This document breaks the v0.3.0 milestone into work packages. It is the
 implementation reference for the forensic triage branch and the checklist used
