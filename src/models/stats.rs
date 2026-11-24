@@ -23,4 +23,16 @@ impl ParseStats {
     pub const fn parsed_block_lines(&self) -> u64 {
         self.block_lines.saturating_sub(self.unparsed_block_lines)
     }
+
+    /// Adds the counters of another file to this summary.
+    pub fn merge(&mut self, other: &Self) {
+        self.total_lines += other.total_lines;
+        self.block_lines += other.block_lines;
+        self.allow_lines += other.allow_lines;
+        self.audit_lines += other.audit_lines;
+        self.other_lines += other.other_lines;
+        self.unparsed_block_lines += other.unparsed_block_lines;
+        self.out_of_order_lines += other.out_of_order_lines;
+        self.future_entries += other.future_entries;
+    }
 }

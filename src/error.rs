@@ -8,6 +8,9 @@ pub enum UfwError {
     #[error("No UFW log found at {0}")]
     LogNotFound(String),
 
+    #[error("Path is not a regular file: {0}")]
+    NotAFile(String),
+
     #[error("Permission denied reading {path}. Hint: {hint}")]
     PermissionDenied { path: String, hint: String },
 }

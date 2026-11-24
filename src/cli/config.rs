@@ -4,7 +4,7 @@ use super::args::CliArgs;
 
 #[derive(Debug)]
 pub struct AppConfig {
-    pub log_file: String,
+    pub log_files: Vec<String>,
     pub from_date: NaiveDate,
     pub to_date: NaiveDate,
     pub csv_mode: bool,
@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub no_cache: bool,
     pub config_path: Option<String>,
     pub findings: Option<String>,
+    pub include_rotated: bool,
+    pub max_decompressed_bytes: Option<u64>,
 }
 
 impl AppConfig {
@@ -36,8 +38,13 @@ impl AppConfig {
             "--from ({from_date}) must be earlier than or equal to --to ({to_date})",
         );
 
+        anyhow::ensure!(
+            !args.log_file.is_empty(),
+            "at least one --log-file path is required"
+        );
+
         Ok(AppConfig {
-            log_file: args.log_file.clone(),
+            log_files: args.log_file.clone(),
             from_date,
             to_date,
             csv_mode: args.csv,
@@ -45,6 +52,8 @@ impl AppConfig {
             no_cache: args.no_cache,
             config_path: args.config.clone(),
             findings: args.findings.clone(),
+            include_rotated: args.include_rotated,
+            max_decompressed_bytes: args.max_decompressed_bytes,
         })
     }
 }

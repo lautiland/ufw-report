@@ -1,6 +1,8 @@
 use clap::Parser;
 
 #[derive(Parser, Debug)]
+// CLI flags are naturally boolean; grouping them into enums would not help clap.
+#[allow(clippy::struct_excessive_bools)]
 #[command(
     name = "ufw-report",
     version,
@@ -16,9 +18,23 @@ pub struct CliArgs {
         long,
         value_name = "PATH",
         default_value = "/var/log/ufw.log",
-        help = "Path to the UFW log file"
+        action = clap::ArgAction::Append,
+        help = "Path to a UFW log file; repeat the flag to analyze several files"
     )]
-    pub log_file: String,
+    pub log_file: Vec<String>,
+
+    #[arg(
+        long,
+        help = "Also read rotated siblings named <log>.<N> and <log>.<N>.gz"
+    )]
+    pub include_rotated: bool,
+
+    #[arg(
+        long,
+        value_name = "BYTES",
+        help = "Maximum decompressed size per .gz input (default: 4294967296, i.e. 4 GiB)"
+    )]
+    pub max_decompressed_bytes: Option<u64>,
 
     #[arg(long, help = "Export the parsed entries as CSV and exit")]
     pub csv: bool,

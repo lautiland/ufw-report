@@ -78,6 +78,22 @@ impl PortsConfig {
     }
 }
 
+/// Hard limits applied while reading input files.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LimitsConfig {
+    /// Maximum decompressed size for one `.gz` input, in bytes.
+    pub max_decompressed_bytes: u64,
+}
+
+impl Default for LimitsConfig {
+    fn default() -> Self {
+        Self {
+            max_decompressed_bytes: crate::core::DEFAULT_MAX_DECOMPRESSED_BYTES,
+        }
+    }
+}
+
 /// CIDR ranges that should never be reported as threats.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -113,6 +129,7 @@ impl Default for ScoringConfig {
 #[serde(default)]
 pub struct AnalysisConfig {
     pub thresholds: Thresholds,
+    pub limits: LimitsConfig,
     pub subnets: SubnetConfig,
     pub ports: PortsConfig,
     pub allowlist: AllowlistConfig,
@@ -190,6 +207,10 @@ impl AnalysisConfig {
             "thresholds.subnet_min_sources must be greater than zero"
         );
         anyhow::ensure!(
+            self.limits.max_decompressed_bytes > 0,
+            "limits.max_decompressed_bytes must be greater than zero"
+        );
+        anyhow::ensure!(
             self.subnets.ipv4_prefix <= 32,
             "subnets.ipv4_prefix must be between 0 and 32"
         );
@@ -225,6 +246,7 @@ mod tests {
         assert_eq!(config.subnets.ipv6_prefix, 64);
         assert!(config.ports.admin.contains(&22));
         assert_eq!(config.allowlist.cidrs.len(), 0);
+        assert_eq!(config.limits.max_decompressed_bytes, 4 * 1024 * 1024 * 1024);
         assert_eq!(config.scoring.volume_weight, 8);
         assert_eq!(config.scoring.ports_weight, 2);
         assert_eq!(config.scoring.admin_weight, 1);
@@ -245,6 +267,7 @@ mod tests {
         assert_eq!(config.thresholds.scan_ports_per_hour, 4);
         assert_eq!(config.thresholds.scan_hosts_per_hour, 10);
         assert_eq!(config.subnets.ipv4_prefix, 24);
+        assert_eq!(config.limits.max_decompressed_bytes, 4 * 1024 * 1024 * 1024);
         assert_eq!(config.scoring.volume_weight, 8);
     }
 

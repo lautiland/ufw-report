@@ -10,6 +10,36 @@ use ufw_report::models::build_aggregated;
 use ufw_report::output::{self, FindingsFormat, OutputFormat};
 use ufw_report::threat::config::AnalysisConfig;
 
+fn report_file_errors(files: &[ufw_report::models::EvidenceFile]) {
+    for file in files {
+        if let Some(error) = &file.error {
+            eprintln!(
+                "warning: {} could only be read partially ({}): {}",
+                file.path,
+                file_error_label(error.kind),
+                error.message
+            );
+        }
+        if file.parse_stats.block_lines > 0 && file.parse_stats.parsed_block_lines() == 0 {
+            eprintln!(
+                "warning: no usable [UFW BLOCK] lines were parsed from {}",
+                file.path
+            );
+        }
+    }
+}
+
+fn file_error_label(kind: ufw_report::models::FileErrorKind) -> &'static str {
+    use ufw_report::models::FileErrorKind;
+
+    match kind {
+        FileErrorKind::PermissionDenied => "permission denied",
+        FileErrorKind::CorruptGzip => "corrupt gzip data",
+        FileErrorKind::DecompressionLimit => "decompression limit reached",
+        FileErrorKind::Io => "I/O error",
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
@@ -36,11 +66,15 @@ fn main() -> anyhow::Result<()> {
 
     let parse_options = ParseOptions {
         use_cache: !config.no_cache,
+        include_rotated: config.include_rotated,
+        max_decompressed_bytes: config
+            .max_decompressed_bytes
+            .unwrap_or(analysis_config.limits.max_decompressed_bytes),
         ..ParseOptions::default()
     };
 
-    let parse_result = match core::parse_ufw_log_range_with_options(
-        &config.log_file,
+    let parse_result = match core::parse_logs_with_options(
+        &config.log_files,
         config.from_date,
         config.to_date,
         &parse_options,
@@ -59,6 +93,8 @@ fn main() -> anyhow::Result<()> {
     let entry_count = parse_result.all_entries.len();
     let day_count = parse_result.reports.len();
     eprintln!("{entry_count} entries, {day_count} days");
+
+    report_file_errors(&parse_result.files);
 
     let findings_format = config.findings.as_deref().map(FindingsFormat::resolve);
     let needs_analysis = findings_format.is_some() || output_format.is_none();

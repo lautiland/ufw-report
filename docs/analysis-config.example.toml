@@ -7,6 +7,11 @@
 # Every section and key is optional. Values omitted here keep their built-in
 # defaults, so this file can also serve as a reference.
 
+[limits]
+# Maximum decompressed size for one .gz input, in bytes (default: 4 GiB).
+# Override per run with --max-decompressed-bytes.
+max_decompressed_bytes = 4294967296
+
 [thresholds]
 # Distinct destination ports from one source in one hour.
 scan_ports_per_hour = 10
