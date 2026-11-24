@@ -3,12 +3,34 @@
 This document is the single source of truth for the product direction of
 `ufw-report`. It lists what is already shipped, what is planned next, and what
 is explicitly out of scope. For the current behavior of the tool, see
-[`actual-state.md`](actual-state.md).
+[`../README.md`](../README.md).
 
 > **Spec Kit:** change-level specifications, plans, and tasks live under
 > `specs/` (see [`spec-kit.md`](spec-kit.md)). This roadmap remains the
-> authority for direction, scope, and sequencing; it should link to the spec
-> once a roadmap item becomes active work.
+> authority for direction, scope, and sequencing; it links to the spec once a
+> roadmap item becomes active work.
+
+## Product context
+
+`ufw-report` exists because raw UFW logs are noisy and heavy SIEM stacks are a
+poor fit for small servers, VPS instances, and Raspberry Pis. The primary users
+are blue-teamers, incident responders, and security auditors who need offline
+triage and evidence preservation on the host itself. Sysadmins, DevOps, and
+homelabbers benefit from the terminal UI but do not drive the roadmap.
+
+The value proposition is instant forensic triage in the terminal: offline
+heuristics, precise chronological reconstruction, and a verifiable chain of
+custody without touching the firewall. The unfair advantage is the same
+constraint that limits the tool: it is offline, local, read-only, and
+cryptographically proves which files it read.
+
+The primary channel today is GitHub Releases. Planned channels are `.deb`, a
+Launchpad PPA, and crates.io. Key indicators are downloads, processing time and
+memory per 100k lines, rotated-file coverage, detection precision on
+sliding-window fixtures, evidence-integrity completeness, and recurring
+community issues or pull requests. Sustainability is reputation and portfolio
+value first; donations and a future commercial tier are optional, not roadmap
+drivers.
 
 ## Shipped
 
@@ -43,12 +65,18 @@ is explicitly out of scope. For the current behavior of the tool, see
 
 ### Quality and distribution
 
-- 159 automated tests across parser, cache, models, output, CLI, TUI, and
-  threat analysis
+- 184 automated tests across parser, cache, models, output, CLI, TUI,
+  multi-file ingestion, and threat analysis
 - GitHub Actions CI: `fmt`, pedantic `clippy`, tests, and a locked build
 - Precompiled release binaries for `x86_64`/`aarch64` GNU Linux and `x86_64`
   musl, published as tarballs with SHA256 checksums
 - Documented release process in [`releasing.md`](releasing.md)
+
+> `main` also includes v0.3.0 phases 1.0 and 2.0: second-precision timestamps and
+> multi-file/rotated ingestion with SHA-256. They are not part of a published
+> release yet; see
+> [`specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md) for
+> the remaining work.
 
 ## Next
 
@@ -56,8 +84,7 @@ The next committed milestone is **v0.3.0 — Forensic Triage**. It narrows the
 product around rotated logs, sub-hour resolution, chain of custody, and MITRE
 ATT&CK mapping. The user-facing behavior is specified in
 [`specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md). The
-technical work packages remain in [`wbs-v0.3.0.md`](wbs-v0.3.0.md) as planning
-input for the Spec Kit plan and tasks.
+implementation plan and tasks will be generated from that specification.
 
 ### v0.3.0 — Forensic Triage (committed)
 
@@ -130,4 +157,6 @@ Still unspecced:
 
 Open an issue describing the problem, the affected workflow, and how it fits the
 offline, read-only constraint. Proposals that require network access or rule
-changes are out of scope by design.
+changes are out of scope by design. Significant changes become a specification
+under `specs/` through `/speckit.specify`; small fixes can go straight to a pull
+request with tests and documentation.

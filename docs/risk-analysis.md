@@ -34,14 +34,15 @@ to do if it materializes.
 - **Trigger:** TUI response time above 2 seconds when switching tabs.
 - **Mitigation:** The parse cache avoids reparsing unchanged logs, and parser
   counters make long runs observable before the UI starts. v0.3.0 adds streaming
-  decompression, per-file progress counters, and configurable input limits.
+  decompression, per-file progress counters, and configurable input limits. The
+  remaining gap is asynchronous parsing with a bounded-memory mode, specified in
+  [`specs/003-async-streaming-parsing/spec.md`](../specs/003-async-streaming-parsing/spec.md).
 - **Contingency:** Document the `--no-cache` and export paths, use CSV/JSON
   export instead of the TUI for oversized logs, or analyze one rotated file at a
   time.
 - **Notes:** Exposure increases with multi-file ingestion: reading several
   rotated `.gz` files at once can multiply the number of entries held in memory
-  by 5x to 10x. Asynchronous parsing and streaming aggregation remain tracked in
-  the roadmap.
+  by 5x to 10x. The asynchronous/streaming work is specified in 003.
 
 ## Risk 3: False positives in the heuristics engine
 
@@ -68,23 +69,25 @@ to do if it materializes.
 - **Category:** Functional
 - **Description:** Short bursts that cross an hour boundary or finish inside one
   hour are aggregated.
-- **Causes:** `LogEntry` stores only date and hour, so the analysis cannot see
-  sub-hour timing.
+- **Causes:** The detection engine still aggregates entries into one-hour buckets
+  even though `LogEntry` now carries second-precision timestamps, so the analysis
+  cannot see sub-hour timing.
 - **Consequences:** A fast scan may fall below a per-hour threshold even though
   it was aggressive.
 - **Probability:** Medium
 - **Impact:** Medium
 - **Trigger:** A reported incident that the tool did not flag.
-- **Status:** In active mitigation for v0.3.0.
+- **Status:** In active mitigation for 001.
 - **Mitigation:** v0.3.0 replaces the fixed hourly buckets with second-precision
   timestamps and configurable sliding windows. Until that ships, thresholds are
   conservative by default, and the coverage and ranking sections still surface
   high-volume sources even without a finding.
 - **Contingency:** Lower the relevant threshold in the config file for the
   affected environment.
-- **Notes:** The schema change is no longer out of scope: it is tracked as WBS
-  1.1 and 3.1 for v0.3.0. Risk 4 should move to Low once the sliding-window
-  engine ships and its fixtures pass.
+- **Notes:** The schema change is no longer out of scope: it is tracked in
+  [`specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md).
+  Risk 4 should move to Low once the sliding-window engine ships and its fixtures
+  pass.
 
 ## Risk 5: Runtime failures due to `glibc` incompatibility
 
@@ -121,7 +124,8 @@ to do if it materializes.
 - **Contingency:** Delete the affected release, rotate credentials, and publish
   a new patch release with regenerated checksums.
 - **Notes:** Checksums detect corruption; they do not replace signed releases.
-  Signing is a candidate for a later release.
+  Signing is specified in
+  [`specs/005-signed-releases/spec.md`](../specs/005-signed-releases/spec.md).
 
 ## Risk 7: Memory exhaustion on oversized logs
 
@@ -137,11 +141,13 @@ to do if it materializes.
   a small VPS.
 - **Mitigation:** The cache avoids reparsing, and exports can be produced without
   the TUI. Parse counters report progress. v0.3.0 adds streaming decompression,
-  per-file processing, and configurable input limits.
+  per-file processing, and configurable input limits. 003 adds asynchronous
+  parsing and a configurable memory budget.
 - **Contingency:** Analyze a narrower date range, one rotated file at a time, or
   a smaller input set.
 - **Notes:** The entry count can grow 5x to 10x when several rotated files are
-  read together. Streaming aggregation remains tracked in the roadmap.
+  read together. The bounded-memory and streaming work is specified in
+  [`specs/003-async-streaming-parsing/spec.md`](../specs/003-async-streaming-parsing/spec.md).
 
 ## Risk 8: Terminal incompatibility in the TUI
 
@@ -179,8 +185,8 @@ to do if it materializes.
   presented as complete evidence.
 - **Contingency:** Skip the affected file, report it as a coverage gap, inspect
   the archive manually, and rerun the analysis with the remaining inputs.
-- **Notes:** Size limits and failure behavior must be documented before v0.3.0
-  ships.
+- **Notes:** Size limits and failure behavior are specified in
+  [`specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md).
 
 ## Risk 10: Multi-file cache invalidation bugs
 
@@ -200,8 +206,9 @@ to do if it materializes.
   `cache_version` and add rotation add/remove/change tests.
 - **Contingency:** Disable the cache with `--no-cache`, remove the cache
   directory, and rerun the analysis.
-- **Notes:** Cache invalidation is part of WBS 1.2 and must ship with the
-  multi-file ingestion work.
+- **Notes:** Cache invalidation is part of
+  [`specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md) and
+  must ship with the multi-file ingestion work.
 
 ## Risk 11: Misinterpretation of forensic reports as legal proof
 
@@ -220,7 +227,9 @@ to do if it materializes.
   and in the README that findings are heuristic triage indicators. The hash
   certifies the integrity of the input read during that execution; it does not
   prove that the file was not modified before or after. The tool is not a
-  substitute for a full forensic investigation.
+  substitute for a full forensic investigation. The disclaimer and custody
+  semantics are specified in
+  [`specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md).
 - **Contingency:** Clarify the scope in support responses and recommend
   independent forensic validation before any legal use.
 - **Notes:** Review the disclaimer whenever the findings schema changes.

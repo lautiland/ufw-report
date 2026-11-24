@@ -79,10 +79,10 @@ sha256sum -c ufw-report-v0.2.0-x86_64-unknown-linux-musl.tar.gz.sha256
 
 1. Update the release documentation:
    - `CHANGELOG.md` with the new version and date.
-   - `docs/actual-state.md` to match the behavior shipped in the release.
-   - `README.md` with new flags, features, limitations, and examples.
-   - `docs/roadmap.md`, `docs/risk-analysis.md`, and the active WBS to reflect
-     what shipped and what moved to the backlog.
+   - `README.md` with new flags, features, limitations, examples, and the
+     shipped behavior.
+   - `docs/roadmap.md` and `docs/risk-analysis.md` to reflect what shipped and
+     what moved to the backlog.
    - The active specification under `specs/`: mark it complete, archive it, or
      note the follow-up work. Do not leave a stale second source of truth.
 2. Bump `version` in `Cargo.toml`.
@@ -138,10 +138,13 @@ tarball and its checksum, and verify the download before announcing it.
 
 ## Future work
 
-- Signed releases (for example, `cosign` or `minisign`)
-- `.deb` packages built from the tarballs
-- PPA/Launchpad publication
-- `cargo install ufw-report` via crates.io
+- Signed releases — [`specs/005-signed-releases/spec.md`](../specs/005-signed-releases/spec.md)
+- `.deb` packages built from the tarballs —
+  [`specs/004-distribution-expansion/spec.md`](../specs/004-distribution-expansion/spec.md)
+- PPA/Launchpad publication —
+  [`specs/004-distribution-expansion/spec.md`](../specs/004-distribution-expansion/spec.md)
+- `cargo install ufw-report` via crates.io —
+  [`specs/004-distribution-expansion/spec.md`](../specs/004-distribution-expansion/spec.md)
 
 These are tracked in [`roadmap.md`](roadmap.md) and are not part of the current
 release process.
