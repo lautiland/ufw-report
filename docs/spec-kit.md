@@ -50,47 +50,59 @@ Commands are invoked in OpenCode chat with dotted notation:
 
 Feature artifacts live under `specs/<NNN-feature>/` (for example,
 `specs/001-forensic-triage/`). The active feature is tracked in
-`.specify/feature.json`, not by the checked-out Git branch. The optional Spec Kit
-`git` extension is not installed; branches remain a manual choice in this
-repository.
+`.specify/feature.json`, not by the checked-out Git branch. The Spec Kit `git`
+extension is installed and creates `feat/NNN-slug` branches automatically; the
+active-feature pointer still comes from `.specify/feature.json`.
+
+A typical feature directory contains:
+
+```text
+specs/001-feature-name/
+├── spec.md          # What and why (mandatory)
+├── plan.md          # Technical approach and constitution check
+├── research.md      # Phase 0 decisions
+├── data-model.md    # Entities and relationships
+├── quickstart.md    # Validation scenarios
+├── contracts/       # Interface contracts, when applicable
+├── checklists/      # Requirements-quality checklists
+└── tasks.md         # Dependency-ordered implementation tasks
+```
+
+Feature directories are committed and reviewed like any other change.
+`.specify/feature.json` is per-checkout state and is intentionally ignored.
 
 ## Source-of-truth map
 
 | Question | Authoritative document |
 | --- | --- |
 | What rules govern the project? | `.specify/memory/constitution.md` |
-| What does the tool do today? | `docs/actual-state.md` |
+| What does the tool do today? | `README.md` |
 | Where is the product going? | `docs/roadmap.md` |
 | What are we building in this change? | `specs/<NNN-feature>/spec.md` and its artifacts |
 | What can go wrong? | `docs/risk-analysis.md` |
 | How is a release cut? | `docs/releasing.md` |
+| How do I contribute? | `docs/spec-kit.md` |
 | What changed for users? | `CHANGELOG.md` |
 
-## Legacy methodology files
+## Removed planning artifacts
 
-The repository previously used a lightweight product-planning methodology. None
-of those documents are Spec Kit artifacts, and they are not being deleted
-automatically:
+The pre-Spec Kit planning files were consolidated instead of kept as parallel
+sources of truth:
 
-- `docs/lean-canvas.md` — product strategy context. Still valid; it is not a
-  change-level artifact and does not conflict with Spec Kit.
-- `docs/roadmap.md` — product-level direction. Still valid and remains the
-  authority for scope and sequencing. It should link to the spec when a roadmap
-  item becomes active work.
-- `docs/risk-analysis.md` — risk register. Still active and reviewed at every
-  release.
-- `docs/actual-state.md` — shipped behavior. Still valid; Spec Kit does not
-  replace it.
-- `docs/wbs-v0.3.0.md` — legacy work breakdown. It is implementation-level
-  planning and overlaps with `plan.md` and `tasks.md`. It is retained as
-  technical input for the v0.3.0 specification; phases 1.0 and 2.0 are already on
-  `main`. Do not update it in parallel with the spec.
+- `docs/actual-state.md` — merged into `README.md` (shipped behavior and
+  technical notes).
+- `docs/lean-canvas.md` — strategic context merged into the "Product context"
+  section of `docs/roadmap.md`.
+- `docs/wbs-v0.3.0.md` — absorbed by
+  `specs/001-forensic-triage/spec.md`; the detailed work packages remain in Git
+  history at commit `22a2a9a` and are the input for `plan.md` and `tasks.md`.
+- `specs/README.md` — artifact layout and spec index moved into this guide.
 - `docs/wbs.md` and `docs/implementation-plan.md` — removed in earlier commits
   (`885879c` and `22a2a9a`). They are historical only and are not restored.
 
 The rule going forward: product direction lives in `docs/roadmap.md`,
-change-level intent lives in `specs/`, shipped behavior lives in
-`docs/actual-state.md`, and the constitution governs conflicts.
+change-level intent lives in `specs/`, shipped behavior lives in `README.md` and
+`CHANGELOG.md`, and the constitution governs conflicts.
 
 ## Operational notes
 
@@ -123,9 +135,9 @@ The current specification set is:
 | [`004-distribution-expansion`](../specs/004-distribution-expansion/spec.md) | Draft | `/speckit.clarify` then `/speckit.plan` |
 | [`005-signed-releases`](../specs/005-signed-releases/spec.md) | Draft | `/speckit.clarify` then `/speckit.plan` |
 
-The v0.3.0 milestone is specified in `001`. Its legacy WBS is retained as
-technical input. The next steps are `/speckit.clarify` if requirements remain
-ambiguous, then `/speckit.plan` and `/speckit.tasks`.
+The v0.3.0 milestone is specified in `001`. The next steps are
+`/speckit.clarify` if requirements remain ambiguous, then `/speckit.plan` and
+`/speckit.tasks`.
 
 Future features start with `/speckit.specify ...`. The installed git extension
 creates a `feat/NNN-slug` branch from the current state before the specification

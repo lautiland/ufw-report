@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format is based on
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from 1.0.0.
 Before 1.0.0, minor versions may include breaking changes.
 
+## Unreleased
+
+### Added
+
+- GitHub Spec Kit adoption with the OpenCode integration, a project
+  constitution, and generated workflow commands.
+- Specifications for forensic triage, incident isolation, async/streaming
+  parsing, distribution (`.deb`, PPA, crates.io), and signed releases.
+
+### Changed
+
+- Consolidated the documentation around `README.md`, `docs/roadmap.md`,
+  `docs/risk-analysis.md`, `docs/releasing.md`, and `specs/`.
+- Merged the shipped-behavior notes into `README.md` and the product context into
+  `docs/roadmap.md`.
+
+### Removed
+
+- Stale duplicate documentation: `docs/actual-state.md`, `docs/lean-canvas.md`,
+  `docs/wbs-v0.3.0.md`, and `specs/README.md`.
+
 ## 0.2.1 - 2026-11-18
 
 ### Fixed

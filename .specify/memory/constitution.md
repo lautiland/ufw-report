@@ -41,11 +41,11 @@ Non-trivial behavior changes MUST begin with a specification under
 `/speckit.analyze` MUST be run before implementation when the full workflow is
 used.
 
-Changes to shipped behavior MUST update `docs/actual-state.md`, `README.md`, and
-`CHANGELOG.md`. Bug fixes MUST record the assessed cause, the scoped fix, and the
-verification performed; a specification is required when the fix changes
-documented behavior. An emergency fix may bypass the sequence, but the missing
-artifacts MUST be completed before the next release.
+Changes to shipped behavior MUST update `README.md` and `CHANGELOG.md`. Bug fixes
+MUST record the assessed cause, the scoped fix, and the verification performed; a
+specification is required when the fix changes documented behavior. An emergency
+fix may bypass the sequence, but the missing artifacts MUST be completed before
+the next release.
 
 ### IV. Testable Quality Gates
 
@@ -118,11 +118,11 @@ truth:
 
 | Location | Purpose |
 | --- | --- |
-| `docs/actual-state.md` | Shipped behavior only |
-| `docs/roadmap.md` | Product direction, scope, and out-of-scope boundaries |
+| `README.md` | User guide, shipped behavior, and technical notes |
+| `docs/roadmap.md` | Product direction, product context, scope, and out-of-scope boundaries |
 | `docs/risk-analysis.md` | Reviewed risk register |
 | `docs/releasing.md` | Release procedure |
-| `docs/lean-canvas.md` | Product strategy context |
+| `docs/spec-kit.md` | Contributor workflow and source-of-truth map |
 | `specs/` | Change-level specification, plan, tasks, and contracts |
 | `CHANGELOG.md` | User-visible changes per release |
 
@@ -144,4 +144,4 @@ Compliance is reviewed during `/speckit.plan`, `/speckit.analyze`, and pull
 request review. Non-compliance MUST be justified in writing or corrected. The
 constitution is reviewed at least once per release.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-24 | **Last Amended**: 2026-11-24
+**Version**: 1.1.0 | **Ratified**: 2026-11-24 | **Last Amended**: 2026-11-24
