@@ -8,6 +8,34 @@
 
 **Input**: User description: "Add forensic triage for rotated and compressed UFW logs: multi-file and .gz ingestion, second-precision timestamps, sliding-window heuristics, chain-of-custody metadata, and MITRE ATT&CK mapping where defensible. Keep the tool offline and read-only."
 
+## Current Baseline (2026-11-24)
+
+The repository is already partway through v0.3.0. This specification describes the
+complete target behavior; the plan MUST verify the baseline instead of
+reimplementing it.
+
+Already present on `main`:
+
+- Second-precision timestamps across parsing, cache, aggregation, and export
+  (`d8d5e5c`).
+- Repeatable `--log-file`, `--include-rotated`, streaming gzip, per-file SHA-256,
+  per-file parse counters, file-level deduplication, a decompressed-size limit
+  (4 GiB by default, `--max-decompressed-bytes`), and partial-read error reporting
+  (`123f54c`).
+- Coverage counters for missing hours, out-of-order lines, and future-dated
+  entries.
+
+Still missing or needing verification in the plan:
+
+- Sliding-window heuristics: scan, sweep, brute force, and distributed brute force
+  still use fixed hourly buckets.
+- Chain-of-custody manifest in the findings exports, including execution metadata
+  and a configuration hash.
+- MITRE ATT&CK identifiers on findings.
+- Promotion of coverage anomalies to integrity findings.
+- Documentation and version alignment: `README.md`, `docs/actual-state.md`, and
+  `Cargo.toml` still describe 0.2.1.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Analyze a complete rotation set in one run (Priority: P1)

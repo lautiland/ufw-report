@@ -82,9 +82,9 @@ automatically:
 - `docs/actual-state.md` — shipped behavior. Still valid; Spec Kit does not
   replace it.
 - `docs/wbs-v0.3.0.md` — legacy work breakdown. It is implementation-level
-  planning and overlaps with `plan.md` and `tasks.md`. It is kept as input for
-  the v0.3.0 specification and MUST NOT be maintained in parallel with the spec
-  once `specs/001-forensic-triage/` exists.
+  planning and overlaps with `plan.md` and `tasks.md`. It is retained as
+  technical input for the v0.3.0 specification; phases 1.0 and 2.0 are already on
+  `main`. Do not update it in parallel with the spec.
 - `docs/wbs.md` and `docs/implementation-plan.md` — removed in earlier commits
   (`885879c` and `22a2a9a`). They are historical only and are not restored.
 

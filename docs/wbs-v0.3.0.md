@@ -8,6 +8,8 @@
 > [`../specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md)
 > (see [`spec-kit.md`](spec-kit.md)). This WBS is retained as technical input for
 > the Spec Kit plan and tasks and must not be updated in parallel with them.
+> Phases 1.0 and 2.0 are already on `main`; see the spec's baseline section for
+> what still needs verification.
 
 This document breaks the v0.3.0 milestone into work packages. It is the
 implementation reference for the forensic triage branch and the checklist used
