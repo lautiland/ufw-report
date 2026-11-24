@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 
 use crate::error::UfwError;
 use crate::models::{DailyReport, HourBreak, IpEntry, LogEntry, ParseStats, PortEntry};
@@ -40,28 +40,24 @@ pub struct ParseResult {
 #[derive(Debug, Default)]
 struct StatsAccumulator {
     stats: ParseStats,
-    previous: Option<(NaiveDate, u32)>,
+    previous: Option<NaiveDateTime>,
 }
 
 impl StatsAccumulator {
-    fn observe(
-        &mut self,
-        line: &str,
-        parsed: Option<&(NaiveDate, u32, LogEntry)>,
-        today: NaiveDate,
-    ) {
+    fn observe(&mut self, line: &str, parsed: Option<&LogEntry>, today: NaiveDate) {
         self.stats.total_lines += 1;
         let line = line.trim();
 
         if line.contains("[UFW BLOCK]") {
             self.stats.block_lines += 1;
-            if let Some((date, hour, entry)) = parsed {
-                if self.previous.is_some_and(|(previous_date, previous_hour)| {
-                    (*date, *hour) < (previous_date, previous_hour)
-                }) {
+            if let Some(entry) = parsed {
+                if self
+                    .previous
+                    .is_some_and(|previous| entry.timestamp < previous)
+                {
                     self.stats.out_of_order_lines += 1;
                 }
-                self.previous = Some((*date, *hour));
+                self.previous = Some(entry.timestamp);
                 if entry.date > today {
                     self.stats.future_entries += 1;
                 }
@@ -111,8 +107,9 @@ pub fn parse_ufw_log_range_with_options(
     let cache_path = cache_file_for(path, &cache_dir);
 
     if options.use_cache {
-        if let Some((cached_entries, stats)) = try_load_cache(&cache_path, path, from, to) {
+        if let Some((mut cached_entries, stats)) = try_load_cache(&cache_path, path, from, to) {
             tracing::debug!("Loaded {} cached entries", cached_entries.len());
+            cached_entries.sort_by_key(|entry| entry.timestamp);
             let reports = build_daily_reports(&cached_entries, from, to);
             return Ok(ParseResult {
                 reports,
@@ -146,17 +143,19 @@ pub fn parse_ufw_log_range_with_options(
         let parsed = parse_log_line(&line, today);
         accumulator.observe(&line, parsed.as_ref(), today);
 
-        if let Some((date, _hour, entry)) = parsed {
+        if let Some(entry) = parsed {
             if options.use_cache {
                 all_entries.push(entry.clone());
             }
-            if date >= from && date <= to {
+            if entry.date >= from && entry.date <= to {
                 entries.push(entry);
             }
         }
     }
 
     let stats = accumulator.stats;
+    all_entries.sort_by_key(|entry| entry.timestamp);
+    entries.sort_by_key(|entry| entry.timestamp);
 
     if options.use_cache && !save_cache(&cache_path, path, &all_entries, &stats) {
         tracing::warn!(
@@ -250,21 +249,23 @@ mod tests {
     use super::*;
     use crate::models::Direction;
 
+    fn entry(date: NaiveDate, hour: u32, second: u32) -> LogEntry {
+        let timestamp = date
+            .and_hms_opt(hour, 0, second)
+            .expect("test timestamp should be valid");
+        let mut entry = LogEntry::new(timestamp, "1.2.3.4".to_string());
+        entry.dst_port = Some(80);
+        entry.protocol = Some("TCP".to_string());
+        entry.direction = Direction::Incoming;
+        entry
+    }
+
     #[test]
     fn test_build_reports_zero_fills_missing_days() {
         let from = NaiveDate::from_ymd_opt(2026, 6, 28).unwrap();
         let to = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
 
-        let entries = vec![LogEntry {
-            date: NaiveDate::from_ymd_opt(2026, 6, 29).unwrap(),
-            hour: 10,
-            src_ip: "1.2.3.4".to_string(),
-            dst_ip: None,
-            src_port: None,
-            dst_port: Some(80),
-            protocol: Some("TCP".to_string()),
-            direction: Direction::Incoming,
-        }];
+        let entries = vec![entry(NaiveDate::from_ymd_opt(2026, 6, 29).unwrap(), 10, 0)];
 
         let reports = build_daily_reports(&entries, from, to);
         assert_eq!(reports.len(), 3);
@@ -296,7 +297,7 @@ mod tests {
 
         assert!(result.is_ok());
         let parse_result = result.unwrap();
-        assert!(parse_result.all_entries.is_empty());
+        assert_eq!(parse_result.all_entries.len(), 0);
         for report in &parse_result.reports {
             assert_eq!(report.total_blocked, 0);
         }
@@ -364,6 +365,37 @@ mod tests {
                 .unwrap();
 
         assert_eq!(result.stats.future_entries, 1);
+    }
+
+    #[test]
+    fn test_entries_are_sorted_by_timestamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("ufw.log");
+        std::fs::write(
+            &log_path,
+            concat!(
+                "2026-06-28T10:00:05 host kernel: [UFW BLOCK] IN=eth0 SRC=10.0.0.5 DPT=22 PROTO=TCP\n",
+                "2026-06-28T10:00:01 host kernel: [UFW BLOCK] IN=eth0 SRC=10.0.0.1 DPT=22 PROTO=TCP\n",
+                "2026-06-28T09:59:59 host kernel: [UFW BLOCK] IN=eth0 SRC=10.0.0.0 DPT=22 PROTO=TCP\n",
+            ),
+        )
+        .unwrap();
+
+        let options = ParseOptions {
+            use_cache: false,
+            reference_date: Some(NaiveDate::from_ymd_opt(2026, 6, 30).unwrap()),
+            ..ParseOptions::default()
+        };
+        let day = NaiveDate::from_ymd_opt(2026, 6, 28).unwrap();
+        let result =
+            parse_ufw_log_range_with_options(log_path.to_str().unwrap(), day, day, &options)
+                .unwrap();
+
+        assert_eq!(result.stats.out_of_order_lines, 2);
+        assert!(result
+            .all_entries
+            .windows(2)
+            .all(|window| window[0].timestamp <= window[1].timestamp));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime};
 use regex::Regex;
 
 use crate::models::{Direction, LogEntry};
@@ -9,7 +9,7 @@ static RE_SYSLOG_DATE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(\w{3}\s+\d{1,2})\s+(\d{2}:\d{2}:\d{2})").unwrap());
 
 static RE_ISO_DATE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(\d{4}-\d{2}-\d{2})T(\d{2}):\d{2}:\d{2}").unwrap());
+    LazyLock::new(|| Regex::new(r"^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})").unwrap());
 
 static RE_SRC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"SRC=([0-9a-fA-F:.]+)").unwrap());
 
@@ -87,21 +87,23 @@ fn parse_direction(line: &str) -> Direction {
     }
 }
 
-pub(crate) fn parse_log_line(line: &str, today: NaiveDate) -> Option<(NaiveDate, u32, LogEntry)> {
+pub(crate) fn parse_log_line(line: &str, today: NaiveDate) -> Option<LogEntry> {
     let line = line.trim();
     if !line.contains("[UFW BLOCK]") {
         return None;
     }
 
-    let (date_str, hour) = if let Some(caps) = RE_ISO_DATE.captures(line) {
-        let d = NaiveDate::parse_from_str(caps.get(1)?.as_str(), "%Y-%m-%d").ok()?;
-        let h: u32 = caps.get(2)?.as_str().parse().ok()?;
-        (d, h)
+    let timestamp = if let Some(caps) = RE_ISO_DATE.captures(line) {
+        let date = NaiveDate::parse_from_str(caps.get(1)?.as_str(), "%Y-%m-%d").ok()?;
+        let hour: u32 = caps.get(2)?.as_str().parse().ok()?;
+        let minute: u32 = caps.get(3)?.as_str().parse().ok()?;
+        let second: u32 = caps.get(4)?.as_str().parse().ok()?;
+        NaiveDateTime::new(date, NaiveTime::from_hms_opt(hour, minute, second)?)
     } else {
         let caps = RE_SYSLOG_DATE.captures(line)?;
         let date_part = caps.get(1)?.as_str();
         let time_part = caps.get(2)?.as_str();
-        let h: u32 = time_part[..2].parse().ok()?;
+        let time = NaiveTime::parse_from_str(time_part, "%H:%M:%S").ok()?;
 
         let mut parts = date_part.split_whitespace();
         let month_abbr = parts.next()?;
@@ -109,9 +111,8 @@ pub(crate) fn parse_log_line(line: &str, today: NaiveDate) -> Option<(NaiveDate,
         let month = parse_syslog_month(month_abbr)?;
         let day: u32 = day_str.parse().ok()?;
 
-        let d = NaiveDate::from_ymd_opt(today.year(), month, day)?;
-        let resolved = resolve_year(d, today);
-        (resolved, h)
+        let date = NaiveDate::from_ymd_opt(today.year(), month, day)?;
+        NaiveDateTime::new(resolve_year(date, today), time)
     };
 
     let src_ip = RE_SRC.captures(line)?.get(1)?.as_str().to_string();
@@ -132,28 +133,18 @@ pub(crate) fn parse_log_line(line: &str, today: NaiveDate) -> Option<(NaiveDate,
         .map(|c| normalize_protocol(c.get(1).unwrap().as_str()));
     let direction = parse_direction(line);
 
-    Some((
-        date_str,
-        hour,
-        LogEntry {
-            date: date_str,
-            hour,
-            src_ip,
-            dst_ip,
-            src_port,
-            dst_port,
-            protocol,
-            direction,
-        },
-    ))
+    let mut entry = LogEntry::new(timestamp, src_ip);
+    entry.dst_ip = dst_ip;
+    entry.src_port = src_port;
+    entry.dst_port = dst_port;
+    entry.protocol = protocol;
+    entry.direction = direction;
+    Some(entry)
 }
 
 /// Public wrapper for testing. Parses a single UFW log line.
 #[must_use]
-pub fn parse_log_line_standalone(
-    line: &str,
-    today: NaiveDate,
-) -> Option<(NaiveDate, u32, LogEntry)> {
+pub fn parse_log_line_standalone(line: &str, today: NaiveDate) -> Option<LogEntry> {
     parse_log_line(line, today)
 }
 
@@ -168,24 +159,23 @@ mod tests {
     #[test]
     fn test_parse_ipv4_syslog() {
         let line = "Jun 29 01:23:45 hostname kernel: [UFW BLOCK] IN=eth0 SRC=192.168.1.1 DST=10.0.0.1 PROTO=TCP SPT=54321 DPT=22";
-        let result = parse_log_line(line, today());
-        assert!(result.is_some());
-        let (date, hour, entry) = result.unwrap();
-        assert_eq!(date.to_string(), "2026-06-29");
-        assert_eq!(hour, 1);
+        let entry = parse_log_line(line, today()).expect("line should parse");
+        assert_eq!(entry.date.to_string(), "2026-06-29");
+        assert_eq!(entry.hour, 1);
+        assert_eq!(entry.timestamp.to_string(), "2026-06-29 01:23:45");
         assert_eq!(entry.src_ip, "192.168.1.1");
         assert_eq!(entry.dst_port, Some(22));
         assert_eq!(entry.protocol, Some("TCP".to_string()));
+        assert!(entry.has_consistent_time());
     }
 
     #[test]
     fn test_parse_ipv6_iso() {
         let line = "2026-06-29T14:30:00 hostname kernel: [UFW BLOCK] IN=eth0 SRC=2001:db8::1 DST=::1 PROTO=UDP SPT=123 DPT=53";
-        let result = parse_log_line(line, today());
-        assert!(result.is_some());
-        let (date, hour, entry) = result.unwrap();
-        assert_eq!(date.to_string(), "2026-06-29");
-        assert_eq!(hour, 14);
+        let entry = parse_log_line(line, today()).expect("line should parse");
+        assert_eq!(entry.date.to_string(), "2026-06-29");
+        assert_eq!(entry.hour, 14);
+        assert_eq!(entry.timestamp.to_string(), "2026-06-29 14:30:00");
         assert_eq!(entry.src_ip, "2001:db8::1");
         assert_eq!(entry.dst_port, Some(53));
         assert_eq!(entry.protocol, Some("UDP".to_string()));
@@ -206,9 +196,8 @@ mod tests {
     #[test]
     fn test_parse_minimal_fields() {
         let line = "Jul  4 08:05:00 hostname kernel: [UFW BLOCK] SRC=10.0.0.1";
-        let result = parse_log_line(line, today());
-        assert!(result.is_some());
-        let (_date, _hour, entry) = result.unwrap();
+        let entry = parse_log_line(line, today()).expect("line should parse");
+        assert_eq!(entry.timestamp.to_string(), "2026-07-04 08:05:00");
         assert_eq!(entry.src_ip, "10.0.0.1");
         assert!(entry.dst_port.is_none());
         assert!(entry.protocol.is_none());
@@ -217,31 +206,42 @@ mod tests {
     #[test]
     fn test_hour_extraction() {
         let line = "2026-06-29T23:59:59 hostname kernel: [UFW BLOCK] SRC=10.0.0.1";
-        let result = parse_log_line(line, today());
-        assert!(result.is_some());
-        let (_date, hour, _entry) = result.unwrap();
-        assert_eq!(hour, 23);
+        let entry = parse_log_line(line, today()).expect("line should parse");
+        assert_eq!(entry.hour, 23);
+        assert_eq!(entry.timestamp.to_string(), "2026-06-29 23:59:59");
     }
 
     #[test]
     fn test_syslog_single_digit_day() {
         let line = "Jul  4 08:05:00 hostname kernel: [UFW BLOCK] SRC=10.0.0.1 DPT=22 PROTO=TCP";
-        let result = parse_log_line(line, today());
-        assert!(result.is_some());
-        let (date, hour, entry) = result.unwrap();
-        assert_eq!(date.to_string(), "2026-07-04");
-        assert_eq!(hour, 8);
+        let entry = parse_log_line(line, today()).expect("line should parse");
+        assert_eq!(entry.date.to_string(), "2026-07-04");
+        assert_eq!(entry.hour, 8);
         assert_eq!(entry.dst_port, Some(22));
     }
 
     #[test]
     fn test_fields_reordered() {
         let line = "Jun 29 01:23:45 hostname kernel: [UFW BLOCK] SRC=10.0.0.1 PROTO=TCP DPT=443";
-        let result = parse_log_line(line, today());
-        assert!(result.is_some());
-        let (_date, _hour, entry) = result.unwrap();
+        let entry = parse_log_line(line, today()).expect("line should parse");
         assert_eq!(entry.dst_port, Some(443));
         assert_eq!(entry.protocol, Some("TCP".to_string()));
+    }
+
+    #[test]
+    fn test_iso_fractional_seconds_are_accepted() {
+        let line = "2026-06-29T14:30:07.123456+00:00 hostname kernel: [UFW BLOCK] SRC=10.0.0.1";
+        let entry = parse_log_line(line, today()).expect("line should parse");
+        assert_eq!(entry.timestamp.to_string(), "2026-06-29 14:30:07");
+    }
+
+    #[test]
+    fn test_invalid_time_is_rejected() {
+        let iso = "2026-06-29T25:00:00 hostname kernel: [UFW BLOCK] SRC=10.0.0.1";
+        assert!(parse_log_line(iso, today()).is_none());
+
+        let syslog = "Jun 29 01:60:00 hostname kernel: [UFW BLOCK] SRC=10.0.0.1";
+        assert!(parse_log_line(syslog, today()).is_none());
     }
 
     #[test]

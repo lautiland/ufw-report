@@ -31,11 +31,10 @@ pub fn write_output(entries: &[LogEntry], path: &str, format: OutputFormat) -> a
         return Ok(());
     }
 
-    let file = std::fs::File::create(path)?;
-    match format {
-        OutputFormat::Csv => super::csv::write_csv(file, entries)?,
-        OutputFormat::Json => write_json(file, entries)?,
-    }
+    super::safe::write_output_file(path, |file| match format {
+        OutputFormat::Csv => super::csv::write_csv(&mut *file, entries),
+        OutputFormat::Json => write_json(&mut *file, entries),
+    })?;
 
     tracing::info!("Report written to {}", path);
     Ok(())
@@ -47,28 +46,31 @@ mod tests {
     use chrono::NaiveDate;
 
     fn sample_entries() -> Vec<LogEntry> {
-        vec![
-            LogEntry {
-                date: NaiveDate::from_ymd_opt(2026, 6, 28).unwrap(),
-                hour: 8,
-                src_ip: "10.0.0.1".to_string(),
-                dst_ip: Some("192.168.1.1".to_string()),
-                src_port: Some(54321),
-                dst_port: Some(22),
-                protocol: Some("TCP".to_string()),
-                direction: crate::models::Direction::Incoming,
-            },
-            LogEntry {
-                date: NaiveDate::from_ymd_opt(2026, 6, 29).unwrap(),
-                hour: 22,
-                src_ip: "10.0.0.3".to_string(),
-                dst_ip: None,
-                src_port: None,
-                dst_port: Some(443),
-                protocol: Some("TCP".to_string()),
-                direction: crate::models::Direction::Outgoing,
-            },
-        ]
+        let mut first = LogEntry::new(
+            NaiveDate::from_ymd_opt(2026, 6, 28)
+                .unwrap()
+                .and_hms_opt(8, 12, 34)
+                .unwrap(),
+            "10.0.0.1".to_string(),
+        );
+        first.dst_ip = Some("192.168.1.1".to_string());
+        first.src_port = Some(54321);
+        first.dst_port = Some(22);
+        first.protocol = Some("TCP".to_string());
+        first.direction = crate::models::Direction::Incoming;
+
+        let mut second = LogEntry::new(
+            NaiveDate::from_ymd_opt(2026, 6, 29)
+                .unwrap()
+                .and_hms_opt(22, 5, 6)
+                .unwrap(),
+            "10.0.0.3".to_string(),
+        );
+        second.dst_port = Some(443);
+        second.protocol = Some("TCP".to_string());
+        second.direction = crate::models::Direction::Outgoing;
+
+        vec![first, second]
     }
 
     #[test]
@@ -82,8 +84,10 @@ mod tests {
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0]["src_ip"], "10.0.0.1");
         assert_eq!(parsed[0]["dst_port"], 22);
+        assert_eq!(parsed[0]["timestamp"], "2026-06-28T08:12:34");
         assert_eq!(parsed[1]["src_ip"], "10.0.0.3");
         assert_eq!(parsed[1]["direction"], "Outgoing");
+        assert_eq!(parsed[1]["timestamp"], "2026-06-29T22:05:06");
     }
 
     #[test]
@@ -95,7 +99,9 @@ mod tests {
         let deserialized: Vec<LogEntry> = serde_json::from_slice(&buf).unwrap();
         assert_eq!(deserialized.len(), 2);
         assert_eq!(deserialized[0].src_ip, entries[0].src_ip);
+        assert_eq!(deserialized[0].timestamp, entries[0].timestamp);
         assert_eq!(deserialized[1].dst_port, entries[1].dst_port);
+        assert_eq!(deserialized[1].timestamp, entries[1].timestamp);
     }
 
     #[test]

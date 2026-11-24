@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::{LogEntry, ParseStats};
 
-const CACHE_VERSION: u32 = 3;
-const PARSER_VERSION: u32 = 1;
+const CACHE_VERSION: u32 = 4;
+const PARSER_VERSION: u32 = 2;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CacheFile {
@@ -78,6 +78,15 @@ pub(crate) fn try_load_cache(
         return None;
     }
 
+    if cache
+        .entries
+        .iter()
+        .any(|entry| !entry.has_consistent_time())
+    {
+        tracing::warn!("Ignoring cache with inconsistent entry timestamps");
+        return None;
+    }
+
     let entries = cache
         .entries
         .into_iter()
@@ -137,16 +146,14 @@ mod tests {
     use crate::models::Direction;
 
     fn entry(date: NaiveDate) -> LogEntry {
-        LogEntry {
-            date,
-            hour: 12,
-            src_ip: "203.0.113.10".to_string(),
-            dst_ip: None,
-            src_port: None,
-            dst_port: Some(22),
-            protocol: Some("TCP".to_string()),
-            direction: Direction::Incoming,
-        }
+        let timestamp = date
+            .and_hms_opt(12, 34, 56)
+            .expect("test timestamp should be valid");
+        let mut entry = LogEntry::new(timestamp, "203.0.113.10".to_string());
+        entry.dst_port = Some(22);
+        entry.protocol = Some("TCP".to_string());
+        entry.direction = Direction::Incoming;
+        entry
     }
 
     fn sample_entries() -> Vec<LogEntry> {
@@ -162,6 +169,49 @@ mod tests {
             block_lines: 2,
             ..ParseStats::default()
         }
+    }
+
+    #[test]
+    fn test_cache_preserves_second_precision() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("ufw.log");
+        std::fs::write(&log_path, "log contents").unwrap();
+        let cache_path = cache_file_for(&log_path, dir.path());
+
+        assert!(save_cache(
+            &cache_path,
+            &log_path,
+            &sample_entries(),
+            &sample_stats()
+        ));
+
+        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
+        let to = NaiveDate::from_ymd_opt(2026, 7, 31).unwrap();
+        let (cached, _) = try_load_cache(&cache_path, &log_path, from, to).unwrap();
+        assert_eq!(cached[0].timestamp.to_string(), "2026-06-28 12:34:56");
+    }
+
+    #[test]
+    fn test_cache_rejects_inconsistent_timestamps() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("ufw.log");
+        std::fs::write(&log_path, "log contents").unwrap();
+        let cache_path = cache_file_for(&log_path, dir.path());
+        assert!(save_cache(
+            &cache_path,
+            &log_path,
+            &sample_entries(),
+            &sample_stats()
+        ));
+
+        let raw = std::fs::read_to_string(&cache_path).unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        value["entries"][0]["hour"] = serde_json::json!(99);
+        std::fs::write(&cache_path, value.to_string()).unwrap();
+
+        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
+        let to = NaiveDate::from_ymd_opt(2026, 7, 31).unwrap();
+        assert!(try_load_cache(&cache_path, &log_path, from, to).is_none());
     }
 
     #[test]

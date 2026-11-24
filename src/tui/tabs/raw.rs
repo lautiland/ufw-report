@@ -25,7 +25,7 @@ pub(crate) fn render_raw(
         .map(|e| {
             Row::new(vec![
                 Cell::from(e.date.format("%m/%d").to_string()),
-                Cell::from(format!("{:02}", e.hour)),
+                Cell::from(e.timestamp.format("%H:%M:%S").to_string()),
                 Cell::from(if e.src_ip.len() > 18 {
                     format!("{}..", &e.src_ip[..18])
                 } else {
@@ -45,7 +45,7 @@ pub(crate) fn render_raw(
 
     let widths = [
         Constraint::Length(6),
-        Constraint::Length(3),
+        Constraint::Length(8),
         Constraint::Length(20),
         Constraint::Length(20),
         Constraint::Length(6),
@@ -56,7 +56,7 @@ pub(crate) fn render_raw(
     let table = Table::new(rows, widths)
         .header(
             Row::new(vec![
-                "Date", "Hr", "Src IP", "Dst IP", "DPT", "Proto", "Dir",
+                "Date", "Time", "Src IP", "Dst IP", "DPT", "Proto", "Dir",
             ])
             .style(Style::default().add_modifier(Modifier::BOLD)),
         )

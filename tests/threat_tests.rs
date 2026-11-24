@@ -82,6 +82,21 @@ fn test_scan_findings_are_exported_as_json() {
 }
 
 #[test]
+fn test_findings_refuse_to_overwrite_different_content() {
+    let env = TestEnv::new("threat_scan.log");
+    let path = env.path("findings.json");
+    std::fs::write(&path, "previous evidence").unwrap();
+
+    let mut command = env.command();
+    command.args(["--findings", path.to_str().unwrap()]);
+    let output = run(&mut command);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("collision"));
+    assert_eq!(read_file(&path), "previous evidence");
+}
+
+#[test]
 fn test_bruteforce_findings_are_exported() {
     let env = TestEnv::new("threat_bruteforce.log");
     let report = findings_json(&env);

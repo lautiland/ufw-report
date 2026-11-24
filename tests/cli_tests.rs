@@ -61,7 +61,10 @@ fn test_csv_to_stdout() {
 
     assert!(output.status.success(), "{}", stderr(&output));
     let csv = stdout(&output);
-    assert!(csv.starts_with("date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction\n"));
+    assert!(
+        csv.starts_with("date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction,timestamp\n")
+    );
+    assert!(csv.contains("2026-06-29T01:15:00"));
     assert_eq!(csv.lines().count(), 4);
     assert!(stderr(&output).contains("3 entries"));
 }
@@ -109,7 +112,7 @@ fn test_output_csv_file() {
 
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(read_file(&output_path)
-        .starts_with("date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction\n"));
+        .starts_with("date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction,timestamp\n"));
 }
 
 #[test]

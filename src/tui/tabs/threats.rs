@@ -358,15 +358,16 @@ mod tests {
 
     fn scan_entries() -> Vec<LogEntry> {
         (1..=10)
-            .map(|port| LogEntry {
-                date: day(),
-                hour: 10,
-                src_ip: "203.0.113.10".to_string(),
-                dst_ip: Some("192.168.1.1".to_string()),
-                src_port: None,
-                dst_port: Some(port),
-                protocol: Some("TCP".to_string()),
-                direction: Direction::Incoming,
+            .map(|port| {
+                let timestamp = day()
+                    .and_hms_opt(10, 0, 0)
+                    .expect("test timestamp should be valid");
+                let mut entry = LogEntry::new(timestamp, "203.0.113.10".to_string());
+                entry.dst_ip = Some("192.168.1.1".to_string());
+                entry.dst_port = Some(port);
+                entry.protocol = Some("TCP".to_string());
+                entry.direction = Direction::Incoming;
+                entry
             })
             .collect()
     }

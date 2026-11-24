@@ -188,16 +188,15 @@ mod tests {
     use crate::models::Direction;
 
     fn entry(date: NaiveDate, hour: u32, ip: &str, target: &str, port: u16) -> LogEntry {
-        LogEntry {
-            date,
-            hour,
-            src_ip: ip.to_string(),
-            dst_ip: Some(target.to_string()),
-            src_port: None,
-            dst_port: Some(port),
-            protocol: Some("TCP".to_string()),
-            direction: Direction::Incoming,
-        }
+        let timestamp = date
+            .and_hms_opt(hour, 0, 0)
+            .expect("test timestamp should be valid");
+        let mut entry = LogEntry::new(timestamp, ip.to_string());
+        entry.dst_ip = Some(target.to_string());
+        entry.dst_port = Some(port);
+        entry.protocol = Some("TCP".to_string());
+        entry.direction = Direction::Incoming;
+        entry
     }
 
     fn day() -> NaiveDate {
