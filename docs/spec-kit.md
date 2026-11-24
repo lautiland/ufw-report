@@ -113,10 +113,18 @@ change-level intent lives in `specs/`, shipped behavior lives in
 
 ## Starting the first feature
 
-The v0.3.0 milestone is already specified in
-[`../specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md),
-with its requirements checklist in the same directory. The legacy WBS is retained
-as technical input. The next steps are `/speckit.clarify` if requirements remain
+The current specification set is:
+
+| Spec | Status | Next step |
+| --- | --- | --- |
+| [`001-forensic-triage`](../specs/001-forensic-triage/spec.md) | Baseline partly implemented | `/speckit.clarify` then `/speckit.plan` |
+| [`002-incident-isolation`](../specs/002-incident-isolation/spec.md) | Draft | `/speckit.clarify` then `/speckit.plan` |
+| [`003-async-streaming-parsing`](../specs/003-async-streaming-parsing/spec.md) | Draft | `/speckit.clarify` then `/speckit.plan` |
+| [`004-distribution-expansion`](../specs/004-distribution-expansion/spec.md) | Draft | `/speckit.clarify` then `/speckit.plan` |
+| [`005-signed-releases`](../specs/005-signed-releases/spec.md) | Draft | `/speckit.clarify` then `/speckit.plan` |
+
+The v0.3.0 milestone is specified in `001`. Its legacy WBS is retained as
+technical input. The next steps are `/speckit.clarify` if requirements remain
 ambiguous, then `/speckit.plan` and `/speckit.tasks`.
 
 Future features start with `/speckit.specify ...`. The installed git extension

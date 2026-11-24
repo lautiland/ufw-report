@@ -97,9 +97,21 @@ without turning it into a SIEM or a packet-level forensic suite.
 
 ### Backlog (v0.4.0+)
 
-- Isolate an incident directly from Daily/Threats and export filtered raw evidence
-- Optional passive fingerprinting (TCP flags and TTL) to enrich `T1046`
-- Asynchronous or streaming parsing, plus `.deb`/crates.io distribution
+Specs ready for planning:
+
+- Incident isolation and filtered evidence export —
+  [`specs/002-incident-isolation/spec.md`](../specs/002-incident-isolation/spec.md)
+- Asynchronous and streaming parsing for large log sets —
+  [`specs/003-async-streaming-parsing/spec.md`](../specs/003-async-streaming-parsing/spec.md)
+- Distribution through `.deb`, a Launchpad PPA, and crates.io —
+  [`specs/004-distribution-expansion/spec.md`](../specs/004-distribution-expansion/spec.md)
+- Signed releases and offline provenance verification —
+  [`specs/005-signed-releases/spec.md`](../specs/005-signed-releases/spec.md)
+
+Still unspecced:
+
+- Optional passive fingerprinting (TCP flags and TTL) to enrich `T1046`; keep in
+  the backlog until 001–003 are implemented.
 - Generator of `ufw deny` commands for manual review (deprioritized on this
   branch; the tool stays read-only)
 
