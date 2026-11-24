@@ -59,11 +59,13 @@ The binary is written to `target/release/ufw-report`.
 
 ## Status
 
-`0.2.1` is the current release. It ships precompiled binaries for the three
-supported targets. The threat analysis (TUI tab, scoring, and findings export)
-is feature-complete for its first iteration; smaller improvements and packaging
-are tracked in [`docs/roadmap.md`](docs/roadmap.md). The project is pre-1.0, so
-CLI flags and output formats may still change between minor versions.
+`0.2.1` is the latest published release. It ships precompiled binaries for the
+three supported targets. `main` already includes part of the v0.3.0
+forensic-triage work: second-precision timestamps and multi-file/rotated
+ingestion with SHA-256. The remaining v0.3.0 work is specified in
+[`specs/001-forensic-triage/spec.md`](specs/001-forensic-triage/spec.md), and the
+backlog is indexed in [`docs/roadmap.md`](docs/roadmap.md). The project is
+pre-1.0, so CLI flags and output formats may still change between minor versions.
 
 ## Usage
 
@@ -76,6 +78,15 @@ ufw-report --from 2026-06-01 --to 2026-06-30
 
 # Custom log path
 ufw-report --log-file /var/log/ufw.log
+
+# Analyze several files explicitly
+ufw-report -l /var/log/ufw.log -l /var/log/ufw.log.1
+
+# Discover rotated siblings, including .gz
+ufw-report --include-rotated
+
+# Lower the decompressed-size limit per .gz input (bytes)
+ufw-report --include-rotated --max-decompressed-bytes 1073741824
 
 # Export CSV to stdout
 ufw-report --csv > report.csv
@@ -195,6 +206,9 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
 ## Features
 
 - UFW log parsing for IPv4 and IPv6, including syslog and ISO timestamps
+- Second-precision timestamps preserved through parsing, cache, and export
+- Multi-file and rotated `.gz` ingestion with per-file SHA-256 and parse
+  counters
 - Protocol normalization (numeric values to names)
 - Traffic direction detection (`IN=` / `OUT=`)
 - Configurable date range (default: last 7 days)
@@ -229,13 +243,38 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
   through parser counters instead of crashing, but those lines are skipped.
 - Analysis is synchronous and keeps parsed entries in memory. Very large logs
   need memory proportional to the number of blocked entries and delay the UI
-  while they are parsed.
-- Heuristics use one-hour buckets because entries store only date and hour, so
-  sub-hour bursts are aggregated into their hour.
+  while they are parsed. Asynchronous parsing is specified in
+  [`specs/003-async-streaming-parsing/spec.md`](specs/003-async-streaming-parsing/spec.md).
+- Entries carry second-precision timestamps, but the detection heuristics still
+  aggregate them into one-hour buckets. Sub-hour bursts are therefore reported at
+  hour resolution until the sliding-window work in
+  [`specs/001-forensic-triage/spec.md`](specs/001-forensic-triage/spec.md) ships.
 - There is no GeoIP, ASN, or external reputation data: findings come only from
   the local log.
 - Only GitHub Releases are supported today. `.deb` packages, PPAs, and
-  crates.io publication are not available yet.
+  crates.io publication are specified in
+  [`specs/004-distribution-expansion/spec.md`](specs/004-distribution-expansion/spec.md)
+  but are not available yet.
+
+## Technical notes
+
+- Rust 1.82 or newer; single binary; Linux only.
+- The TUI uses `ratatui` + `crossterm`. There is no async runtime; the analysis
+  is synchronous and in-memory.
+- IPv4 and IPv6 are supported. Protocol normalization uses a built-in table, not
+  `/etc/protocols`.
+- CSV/JSON columns: `date, hour, src_ip, dst_ip, src_port, dst_port, protocol,
+  direction, timestamp`.
+- Dependency versions live in `Cargo.toml`; they are not duplicated here.
+- The panic hook restores the terminal if the TUI crashes.
+
+## Security
+
+- Read-only: the tool never modifies firewall rules or writes to UFW logs.
+- Never runs `ufw` or any other privileged command.
+- No network dependencies, HTTP servers, telemetry, or remote lookups.
+- Cache files are written under the user's cache directory; exports go only to
+  the paths the user selects.
 
 ## Development workflow
 
@@ -246,9 +285,8 @@ change-level specifications, plans, and tasks live under `specs/`.
 
 - New behavior starts with `/speckit.specify` and follows the cycle documented
   in [`docs/spec-kit.md`](docs/spec-kit.md).
-- Shipped behavior is documented in
-  [`docs/actual-state.md`](docs/actual-state.md).
 - Product direction and scope are in [`docs/roadmap.md`](docs/roadmap.md).
+- Cross-cutting risks are in [`docs/risk-analysis.md`](docs/risk-analysis.md).
 
 The required local gates are `cargo fmt`, pedantic `cargo clippy`, `cargo test`,
 and a locked release build. See [`docs/releasing.md`](docs/releasing.md).
@@ -259,7 +297,10 @@ and a locked release build. See [`docs/releasing.md`](docs/releasing.md).
 cargo test
 ```
 
-The suite covers the parser, date range handling, cache invalidation, aggregation, output formats, threat heuristics, findings export, CLI behavior, and TUI navigation.
+The suite has 184 tests covering the parser, date range handling, cache
+invalidation, multi-file ingestion, aggregation, output formats, threat
+heuristics, findings export, CLI behavior, and TUI navigation. CI also runs
+formatting, pedantic Clippy, and a locked release build.
 
 ## License
 

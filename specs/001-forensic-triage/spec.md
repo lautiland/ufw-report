@@ -33,8 +33,13 @@ Still missing or needing verification in the plan:
   and a configuration hash.
 - MITRE ATT&CK identifiers on findings.
 - Promotion of coverage anomalies to integrity findings.
-- Documentation and version alignment: `README.md`, `docs/actual-state.md`, and
-  `Cargo.toml` still describe 0.2.1.
+- Documentation and version alignment: `README.md` and `Cargo.toml` still
+  describe 0.2.1.
+
+> **Planning input:** The pre-Spec Kit WBS that detailed this milestone was
+> removed during the documentation consolidation. Its content remains in Git
+> history at `docs/wbs-v0.3.0.md` (commit `22a2a9a`) and is the input for
+> `plan.md` and `tasks.md`.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -315,9 +320,9 @@ the findings section as well as the coverage summary.
 - **SC-006**: Port scan, host sweep, and brute force findings carry `T1046`,
   `T1018`, and `T1110` respectively; persistence and integrity findings carry no
   ATT&CK identifier in 100% of fixture cases.
-- **SC-007**: All existing behavior documented in `docs/actual-state.md` for
-  v0.2.1 still passes its tests, or the breaking change is documented in
-  `README.md` and `CHANGELOG.md` before release.
+- **SC-007**: All existing behavior documented in `README.md` for v0.2.1 still
+  passes its tests, or the breaking change is documented in `README.md` and
+  `CHANGELOG.md` before release.
 - **SC-008**: The required quality gates pass: formatting, pedantic linting, the
   full test suite, and a locked release build.
 - **SC-009**: A compressed input that expands beyond the configured limit is
