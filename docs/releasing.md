@@ -83,6 +83,8 @@ sha256sum -c ufw-report-v0.2.0-x86_64-unknown-linux-musl.tar.gz.sha256
    - `README.md` with new flags, features, limitations, and examples.
    - `docs/roadmap.md`, `docs/risk-analysis.md`, and the active WBS to reflect
      what shipped and what moved to the backlog.
+   - The active specification under `specs/`: mark it complete, archive it, or
+     note the follow-up work. Do not leave a stale second source of truth.
 2. Bump `version` in `Cargo.toml`.
 3. Run `cargo update` only if dependencies changed, then commit the updated
    `Cargo.lock`.
