@@ -1,14 +1,18 @@
 use std::collections::HashMap;
-use std::io::BufRead;
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDate, Utc};
 
 use crate::error::UfwError;
-use crate::models::{DailyReport, HourBreak, IpEntry, LogEntry, ParseStats, PortEntry};
+use crate::models::{
+    DailyReport, EvidenceFile, FileError, FileErrorKind, HourBreak, IpEntry, LogEntry, ParseStats,
+    PortEntry,
+};
 
-use super::cache::{cache_file_for, default_cache_dir, save_cache, try_load_cache};
-use super::parser::parse_log_line;
+use super::cache::{cache_file_for, default_cache_dir, load_cache, save_cache};
+use super::hash::sha256_file;
+use super::inputs::{read_input, resolve_inputs, InputFile, DEFAULT_MAX_DECOMPRESSED_BYTES};
 
 #[derive(Debug, Clone)]
 pub struct ParseOptions {
@@ -17,6 +21,10 @@ pub struct ParseOptions {
     /// Reference date used to resolve syslog entries that omit the year.
     /// Defaults to today; tests pin it for deterministic results.
     pub reference_date: Option<NaiveDate>,
+    /// Also read `<base>.<N>` and `<base>.<N>.gz` next to every input.
+    pub include_rotated: bool,
+    /// Maximum decompressed bytes allowed per `.gz` input.
+    pub max_decompressed_bytes: u64,
 }
 
 impl Default for ParseOptions {
@@ -25,6 +33,8 @@ impl Default for ParseOptions {
             use_cache: true,
             cache_dir: None,
             reference_date: None,
+            include_rotated: false,
+            max_decompressed_bytes: DEFAULT_MAX_DECOMPRESSED_BYTES,
         }
     }
 }
@@ -35,43 +45,17 @@ pub struct ParseResult {
     pub all_entries: Vec<LogEntry>,
     /// Whole-file line counters, not restricted to the requested range.
     pub stats: ParseStats,
+    /// One entry per resolved input file, including files that failed to read.
+    pub files: Vec<EvidenceFile>,
 }
 
-#[derive(Debug, Default)]
-struct StatsAccumulator {
+struct FileOutcome {
+    entries: Vec<LogEntry>,
     stats: ParseStats,
-    previous: Option<NaiveDateTime>,
-}
-
-impl StatsAccumulator {
-    fn observe(&mut self, line: &str, parsed: Option<&LogEntry>, today: NaiveDate) {
-        self.stats.total_lines += 1;
-        let line = line.trim();
-
-        if line.contains("[UFW BLOCK]") {
-            self.stats.block_lines += 1;
-            if let Some(entry) = parsed {
-                if self
-                    .previous
-                    .is_some_and(|previous| entry.timestamp < previous)
-                {
-                    self.stats.out_of_order_lines += 1;
-                }
-                self.previous = Some(entry.timestamp);
-                if entry.date > today {
-                    self.stats.future_entries += 1;
-                }
-            } else {
-                self.stats.unparsed_block_lines += 1;
-            }
-        } else if line.contains("[UFW ALLOW]") {
-            self.stats.allow_lines += 1;
-        } else if line.contains("[UFW AUDIT]") {
-            self.stats.audit_lines += 1;
-        } else {
-            self.stats.other_lines += 1;
-        }
-    }
+    sha256: String,
+    decompressed_bytes: u64,
+    error: Option<FileError>,
+    from_cache: bool,
 }
 
 /// # Errors
@@ -86,91 +70,154 @@ pub fn parse_ufw_log_range(
     parse_ufw_log_range_with_options(log_path, from, to, &ParseOptions::default())
 }
 
-/// Same as [`parse_ufw_log_range`], with explicit cache options.
+/// Same as [`parse_ufw_log_range`], with explicit cache and ingestion options.
 ///
 /// # Errors
 ///
-/// Returns [`UfwError::LogNotFound`] if the log file doesn't exist, or
-/// [`UfwError::PermissionDenied`] if the file cannot be read.
+/// Returns [`UfwError::LogNotFound`] if an explicit log file doesn't exist,
+/// or [`UfwError::PermissionDenied`] if an explicit file cannot be read.
 pub fn parse_ufw_log_range_with_options(
     log_path: &str,
     from: NaiveDate,
     to: NaiveDate,
     options: &ParseOptions,
 ) -> Result<ParseResult, UfwError> {
-    let path = Path::new(log_path);
-    if !path.exists() {
-        return Err(UfwError::LogNotFound(log_path.to_string()));
-    }
+    let paths = [log_path.to_string()];
+    parse_logs_with_options(&paths, from, to, options)
+}
 
+/// Parses one or more UFW logs, optionally including rotated siblings.
+///
+/// Files that fail halfway through are reported in [`ParseResult::files`], and
+/// the entries read before the failure are still included in the analysis.
+///
+/// # Errors
+///
+/// Returns an error when an explicit input is missing, is not a regular file,
+/// or cannot be opened.
+pub fn parse_logs_with_options(
+    log_paths: &[String],
+    from: NaiveDate,
+    to: NaiveDate,
+    options: &ParseOptions,
+) -> Result<ParseResult, UfwError> {
+    let inputs = resolve_inputs(log_paths, options.include_rotated)?;
     let cache_dir = options.cache_dir.clone().unwrap_or_else(default_cache_dir);
-    let cache_path = cache_file_for(path, &cache_dir);
-
-    if options.use_cache {
-        if let Some((mut cached_entries, stats)) = try_load_cache(&cache_path, path, from, to) {
-            tracing::debug!("Loaded {} cached entries", cached_entries.len());
-            cached_entries.sort_by_key(|entry| entry.timestamp);
-            let reports = build_daily_reports(&cached_entries, from, to);
-            return Ok(ParseResult {
-                reports,
-                all_entries: cached_entries,
-                stats,
-            });
-        }
-    }
-
-    let file = std::fs::File::open(path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::PermissionDenied {
-            UfwError::PermissionDenied {
-                path: log_path.to_string(),
-                hint: "Run with 'sudo' or add your user to the 'adm' group".into(),
-            }
-        } else {
-            UfwError::LogRead(e)
-        }
-    })?;
-    let reader = std::io::BufReader::new(file);
-
     let today = options
         .reference_date
         .unwrap_or_else(|| chrono::Local::now().date_naive());
-    let mut entries: Vec<LogEntry> = Vec::new();
-    let mut all_entries: Vec<LogEntry> = Vec::new();
-    let mut accumulator = StatsAccumulator::default();
 
-    for line in reader.lines() {
-        let line = line?;
-        let parsed = parse_log_line(&line, today);
-        accumulator.observe(&line, parsed.as_ref(), today);
+    let mut entries = Vec::new();
+    let mut stats = ParseStats::default();
+    let mut files = Vec::with_capacity(inputs.len());
 
-        if let Some(entry) = parsed {
-            if options.use_cache {
-                all_entries.push(entry.clone());
+    for input in inputs {
+        let metadata = match fs::metadata(&input.path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                files.push(unread_evidence(&input, &error));
+                continue;
             }
+        };
+
+        let cache_path = cache_file_for(&input.path, &cache_dir);
+        let outcome = load_or_read(&input, &cache_path, options, today);
+
+        for entry in outcome.entries {
             if entry.date >= from && entry.date <= to {
                 entries.push(entry);
             }
         }
+        stats.merge(&outcome.stats);
+        files.push(EvidenceFile {
+            path: input.path.to_string_lossy().into_owned(),
+            canonical_path: input.canonical_path.to_string_lossy().into_owned(),
+            sha256: outcome.sha256,
+            size_bytes: metadata.len(),
+            decompressed_bytes: outcome.decompressed_bytes,
+            modified_at: metadata.modified().ok().map(DateTime::<Utc>::from),
+            compressed: input.compressed,
+            from_cache: outcome.from_cache,
+            parse_stats: outcome.stats,
+            error: outcome.error,
+        });
     }
 
-    let stats = accumulator.stats;
-    all_entries.sort_by_key(|entry| entry.timestamp);
     entries.sort_by_key(|entry| entry.timestamp);
-
-    if options.use_cache && !save_cache(&cache_path, path, &all_entries, &stats) {
-        tracing::warn!(
-            "Could not write the parse cache to {}; continuing without cache",
-            cache_path.display()
-        );
-    }
-
     let reports = build_daily_reports(&entries, from, to);
 
     Ok(ParseResult {
         reports,
         all_entries: entries,
         stats,
+        files,
     })
+}
+
+fn load_or_read(
+    input: &InputFile,
+    cache_path: &Path,
+    options: &ParseOptions,
+    today: NaiveDate,
+) -> FileOutcome {
+    if options.use_cache {
+        if let Some(cache) = load_cache(cache_path, &input.path) {
+            if let Ok(digest) = sha256_file(&input.path) {
+                if cache.sha256 == digest {
+                    return FileOutcome {
+                        entries: cache.entries,
+                        stats: cache.stats,
+                        sha256: digest,
+                        decompressed_bytes: cache.decompressed_bytes,
+                        error: None,
+                        from_cache: true,
+                    };
+                }
+            }
+        }
+    }
+
+    let read = read_input(input, today, options.max_decompressed_bytes);
+    if options.use_cache
+        && read.error.is_none()
+        && !save_cache(
+            cache_path,
+            &input.path,
+            &read.entries,
+            &read.stats,
+            &read.sha256,
+            read.decompressed_bytes,
+        )
+    {
+        tracing::warn!(
+            "Could not write the parse cache to {}; continuing without cache",
+            cache_path.display()
+        );
+    }
+
+    FileOutcome {
+        entries: read.entries,
+        stats: read.stats,
+        sha256: read.sha256,
+        decompressed_bytes: read.decompressed_bytes,
+        error: read.error,
+        from_cache: false,
+    }
+}
+
+fn unread_evidence(input: &InputFile, error: &std::io::Error) -> EvidenceFile {
+    EvidenceFile {
+        path: input.path.to_string_lossy().into_owned(),
+        canonical_path: input.canonical_path.to_string_lossy().into_owned(),
+        sha256: String::new(),
+        size_bytes: 0,
+        decompressed_bytes: 0,
+        modified_at: None,
+        compressed: input.compressed,
+        from_cache: false,
+        parse_stats: ParseStats::default(),
+        error: Some(FileError::new(FileErrorKind::Io, error.to_string())),
+    }
 }
 
 pub(crate) fn build_daily_reports(

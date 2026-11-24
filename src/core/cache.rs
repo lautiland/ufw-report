@@ -3,12 +3,11 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use crate::models::{LogEntry, ParseStats};
 
-const CACHE_VERSION: u32 = 4;
+const CACHE_VERSION: u32 = 5;
 const PARSER_VERSION: u32 = 2;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -17,6 +16,10 @@ struct CacheFile {
     parser_version: u32,
     log_len: u64,
     log_mtime_secs: u64,
+    #[serde(default)]
+    sha256: String,
+    #[serde(default)]
+    decompressed_bytes: u64,
     #[serde(default)]
     stats: ParseStats,
     entries: Vec<LogEntry>,
@@ -54,18 +57,21 @@ fn metadata_snapshot(log_path: &Path) -> Option<(u64, u64)> {
     Some((len, mtime))
 }
 
-/// Tries to load cached entries for the requested range.
+/// A cache candidate loaded from disk.
+pub(crate) struct CachedLog {
+    pub entries: Vec<LogEntry>,
+    pub stats: ParseStats,
+    pub decompressed_bytes: u64,
+    pub sha256: String,
+}
+
+/// Tries to load a cache candidate for one file.
 ///
-/// The cache stores every parsed entry, so a cache created for a narrow range
-/// still serves a wider range later. The cache is ignored if the log file
-/// changed, if the cache/parser format version differs, or if the file is
-/// corrupt.
-pub(crate) fn try_load_cache(
-    cache_path: &Path,
-    log_path: &Path,
-    from: NaiveDate,
-    to: NaiveDate,
-) -> Option<(Vec<LogEntry>, ParseStats)> {
+/// The cache is ignored if the log metadata changed, if the cache/parser
+/// format version differs, or if the stored entries are inconsistent. The
+/// caller must still compare [`CachedLog::sha256`] against the digest of the
+/// bytes on disk before trusting the entries.
+pub(crate) fn load_cache(cache_path: &Path, log_path: &Path) -> Option<CachedLog> {
     let (log_len, log_mtime_secs) = metadata_snapshot(log_path)?;
     let raw = std::fs::read_to_string(cache_path).ok()?;
     let cache: CacheFile = serde_json::from_str(&raw).ok()?;
@@ -87,13 +93,12 @@ pub(crate) fn try_load_cache(
         return None;
     }
 
-    let entries = cache
-        .entries
-        .into_iter()
-        .filter(|entry| entry.date >= from && entry.date <= to)
-        .collect();
-
-    Some((entries, cache.stats))
+    Some(CachedLog {
+        entries: cache.entries,
+        stats: cache.stats,
+        decompressed_bytes: cache.decompressed_bytes,
+        sha256: cache.sha256,
+    })
 }
 
 /// Persists every parsed entry along with the log fingerprint.
@@ -105,6 +110,8 @@ pub(crate) fn save_cache(
     log_path: &Path,
     entries: &[LogEntry],
     stats: &ParseStats,
+    sha256: &str,
+    decompressed_bytes: u64,
 ) -> bool {
     let Some((log_len, log_mtime_secs)) = metadata_snapshot(log_path) else {
         return false;
@@ -121,6 +128,8 @@ pub(crate) fn save_cache(
         parser_version: PARSER_VERSION,
         log_len,
         log_mtime_secs,
+        sha256: sha256.to_string(),
+        decompressed_bytes,
         stats: stats.clone(),
         entries: entries.to_vec(),
     };
@@ -144,6 +153,9 @@ pub(crate) fn save_cache(
 mod tests {
     use super::*;
     use crate::models::Direction;
+    use chrono::NaiveDate;
+
+    const SHA256: &str = "0123456789abcdef";
 
     fn entry(date: NaiveDate) -> LogEntry {
         let timestamp = date
@@ -171,6 +183,17 @@ mod tests {
         }
     }
 
+    fn save_sample(cache_path: &Path, log_path: &Path, decompressed: u64) -> bool {
+        save_cache(
+            cache_path,
+            log_path,
+            &sample_entries(),
+            &sample_stats(),
+            SHA256,
+            decompressed,
+        )
+    }
+
     #[test]
     fn test_cache_preserves_second_precision() {
         let dir = tempfile::tempdir().unwrap();
@@ -178,17 +201,41 @@ mod tests {
         std::fs::write(&log_path, "log contents").unwrap();
         let cache_path = cache_file_for(&log_path, dir.path());
 
-        assert!(save_cache(
-            &cache_path,
-            &log_path,
-            &sample_entries(),
-            &sample_stats()
-        ));
+        assert!(save_sample(&cache_path, &log_path, 2));
 
-        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
-        let to = NaiveDate::from_ymd_opt(2026, 7, 31).unwrap();
-        let (cached, _) = try_load_cache(&cache_path, &log_path, from, to).unwrap();
-        assert_eq!(cached[0].timestamp.to_string(), "2026-06-28 12:34:56");
+        let cached = load_cache(&cache_path, &log_path).unwrap();
+        assert_eq!(
+            cached.entries[0].timestamp.to_string(),
+            "2026-06-28 12:34:56"
+        );
+    }
+
+    #[test]
+    fn test_cache_returns_all_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("ufw.log");
+        std::fs::write(&log_path, "log contents").unwrap();
+        let cache_path = cache_file_for(&log_path, dir.path());
+
+        assert!(save_sample(&cache_path, &log_path, 2));
+
+        let cached = load_cache(&cache_path, &log_path).unwrap();
+        assert_eq!(cached.entries.len(), 2);
+        assert_eq!(cached.stats.total_lines, 2);
+    }
+
+    #[test]
+    fn test_cache_exposes_digest_and_decompressed_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("ufw.log");
+        std::fs::write(&log_path, "log contents").unwrap();
+        let cache_path = cache_file_for(&log_path, dir.path());
+
+        assert!(save_sample(&cache_path, &log_path, 123_456));
+
+        let cached = load_cache(&cache_path, &log_path).unwrap();
+        assert_eq!(cached.sha256, SHA256);
+        assert_eq!(cached.decompressed_bytes, 123_456);
     }
 
     #[test]
@@ -197,46 +244,14 @@ mod tests {
         let log_path = dir.path().join("ufw.log");
         std::fs::write(&log_path, "log contents").unwrap();
         let cache_path = cache_file_for(&log_path, dir.path());
-        assert!(save_cache(
-            &cache_path,
-            &log_path,
-            &sample_entries(),
-            &sample_stats()
-        ));
+        assert!(save_sample(&cache_path, &log_path, 2));
 
         let raw = std::fs::read_to_string(&cache_path).unwrap();
         let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
         value["entries"][0]["hour"] = serde_json::json!(99);
         std::fs::write(&cache_path, value.to_string()).unwrap();
 
-        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
-        let to = NaiveDate::from_ymd_opt(2026, 7, 31).unwrap();
-        assert!(try_load_cache(&cache_path, &log_path, from, to).is_none());
-    }
-
-    #[test]
-    fn test_cache_serves_wider_range() {
-        let dir = tempfile::tempdir().unwrap();
-        let log_path = dir.path().join("ufw.log");
-        std::fs::write(&log_path, "log contents").unwrap();
-        let cache_path = cache_file_for(&log_path, dir.path());
-
-        assert!(save_cache(
-            &cache_path,
-            &log_path,
-            &sample_entries(),
-            &sample_stats()
-        ));
-
-        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
-        let to_june = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
-        let (cached, stats) = try_load_cache(&cache_path, &log_path, from, to_june).unwrap();
-        assert_eq!(cached.len(), 1);
-        assert_eq!(stats.total_lines, 2);
-
-        let to_july = NaiveDate::from_ymd_opt(2026, 7, 31).unwrap();
-        let (cached, _) = try_load_cache(&cache_path, &log_path, from, to_july).unwrap();
-        assert_eq!(cached.len(), 2);
+        assert!(load_cache(&cache_path, &log_path).is_none());
     }
 
     #[test]
@@ -245,18 +260,11 @@ mod tests {
         let log_path = dir.path().join("ufw.log");
         std::fs::write(&log_path, "first").unwrap();
         let cache_path = cache_file_for(&log_path, dir.path());
-        assert!(save_cache(
-            &cache_path,
-            &log_path,
-            &sample_entries(),
-            &sample_stats()
-        ));
+        assert!(save_sample(&cache_path, &log_path, 2));
 
         std::fs::write(&log_path, "second, longer contents").unwrap();
 
-        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
-        let to = NaiveDate::from_ymd_opt(2026, 7, 31).unwrap();
-        assert!(try_load_cache(&cache_path, &log_path, from, to).is_none());
+        assert!(load_cache(&cache_path, &log_path).is_none());
     }
 
     #[test]
@@ -265,21 +273,14 @@ mod tests {
         let log_path = dir.path().join("ufw.log");
         std::fs::write(&log_path, "log contents").unwrap();
         let cache_path = cache_file_for(&log_path, dir.path());
-        assert!(save_cache(
-            &cache_path,
-            &log_path,
-            &sample_entries(),
-            &sample_stats()
-        ));
+        assert!(save_sample(&cache_path, &log_path, 2));
 
         let raw = std::fs::read_to_string(&cache_path).unwrap();
         let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
         value["cache_version"] = serde_json::json!(0);
         std::fs::write(&cache_path, value.to_string()).unwrap();
 
-        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
-        let to = NaiveDate::from_ymd_opt(2026, 7, 31).unwrap();
-        assert!(try_load_cache(&cache_path, &log_path, from, to).is_none());
+        assert!(load_cache(&cache_path, &log_path).is_none());
     }
 
     #[test]
@@ -290,9 +291,7 @@ mod tests {
         let cache_path = cache_file_for(&log_path, dir.path());
         std::fs::write(&cache_path, "{not json").unwrap();
 
-        let from = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
-        let to = NaiveDate::from_ymd_opt(2026, 7, 31).unwrap();
-        assert!(try_load_cache(&cache_path, &log_path, from, to).is_none());
+        assert!(load_cache(&cache_path, &log_path).is_none());
     }
 
     #[test]
