@@ -54,11 +54,12 @@ pub fn write_findings(
         return Ok(());
     }
 
-    let mut file = std::fs::File::create(path)?;
-    match format {
-        FindingsFormat::Json => serde_json::to_writer_pretty(&mut file, report)?,
-        FindingsFormat::Markdown => file.write_all(render_markdown(report).as_bytes())?,
-    }
+    super::safe::write_output_file(path, |file| match format {
+        FindingsFormat::Json => serde_json::to_writer_pretty(file, report).map_err(Into::into),
+        FindingsFormat::Markdown => file
+            .write_all(render_markdown(report).as_bytes())
+            .map_err(Into::into),
+    })?;
 
     tracing::info!("Findings written to {}", path);
     Ok(())

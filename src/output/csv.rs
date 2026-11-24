@@ -8,12 +8,12 @@ use crate::models::{Direction, LogEntry};
 pub fn write_csv<W: Write>(mut writer: W, entries: &[LogEntry]) -> anyhow::Result<()> {
     writeln!(
         writer,
-        "date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction"
+        "date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction,timestamp"
     )?;
     for e in entries {
         writeln!(
             writer,
-            "{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{}",
             e.date.format("%Y-%m-%d"),
             e.hour,
             e.src_ip,
@@ -26,6 +26,7 @@ pub fn write_csv<W: Write>(mut writer: W, entries: &[LogEntry]) -> anyhow::Resul
                 Direction::Outgoing => "out",
                 Direction::Unknown => "?",
             },
+            e.timestamp.format("%Y-%m-%dT%H:%M:%S"),
         )?;
     }
     Ok(())
@@ -37,28 +38,31 @@ mod tests {
     use chrono::NaiveDate;
 
     fn sample_entries() -> Vec<LogEntry> {
-        vec![
-            LogEntry {
-                date: NaiveDate::from_ymd_opt(2026, 6, 28).unwrap(),
-                hour: 8,
-                src_ip: "10.0.0.1".to_string(),
-                dst_ip: Some("192.168.1.1".to_string()),
-                src_port: Some(54321),
-                dst_port: Some(22),
-                protocol: Some("TCP".to_string()),
-                direction: Direction::Incoming,
-            },
-            LogEntry {
-                date: NaiveDate::from_ymd_opt(2026, 6, 29).unwrap(),
-                hour: 22,
-                src_ip: "10.0.0.3".to_string(),
-                dst_ip: None,
-                src_port: None,
-                dst_port: Some(443),
-                protocol: Some("TCP".to_string()),
-                direction: Direction::Outgoing,
-            },
-        ]
+        let mut first = LogEntry::new(
+            NaiveDate::from_ymd_opt(2026, 6, 28)
+                .unwrap()
+                .and_hms_opt(8, 12, 34)
+                .unwrap(),
+            "10.0.0.1".to_string(),
+        );
+        first.dst_ip = Some("192.168.1.1".to_string());
+        first.src_port = Some(54321);
+        first.dst_port = Some(22);
+        first.protocol = Some("TCP".to_string());
+        first.direction = Direction::Incoming;
+
+        let mut second = LogEntry::new(
+            NaiveDate::from_ymd_opt(2026, 6, 29)
+                .unwrap()
+                .and_hms_opt(22, 5, 6)
+                .unwrap(),
+            "10.0.0.3".to_string(),
+        );
+        second.dst_port = Some(443);
+        second.protocol = Some("TCP".to_string());
+        second.direction = Direction::Outgoing;
+
+        vec![first, second]
     }
 
     #[test]
@@ -68,11 +72,12 @@ mod tests {
         write_csv(&mut buf, &entries).unwrap();
         let output = String::from_utf8(buf).unwrap();
 
-        assert!(
-            output.starts_with("date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction\n")
-        );
-        assert!(output.contains("2026-06-28,8,10.0.0.1,192.168.1.1,54321,22,TCP,in"));
-        assert!(output.contains("2026-06-29,22,10.0.0.3,,,443,TCP,out"));
+        assert!(output.starts_with(
+            "date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction,timestamp\n"
+        ));
+        assert!(output
+            .contains("2026-06-28,8,10.0.0.1,192.168.1.1,54321,22,TCP,in,2026-06-28T08:12:34"));
+        assert!(output.contains("2026-06-29,22,10.0.0.3,,,443,TCP,out,2026-06-29T22:05:06"));
         assert_eq!(output.lines().count(), 3);
     }
 
@@ -83,7 +88,7 @@ mod tests {
         let output = String::from_utf8(buf).unwrap();
         assert_eq!(
             output,
-            "date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction\n"
+            "date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction,timestamp\n"
         );
     }
 }

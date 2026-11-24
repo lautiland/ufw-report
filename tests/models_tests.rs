@@ -7,16 +7,14 @@ use ufw_report::models::{
 };
 
 fn entry(date: NaiveDate, hour: u32, ip: &str, port: Option<u16>, proto: &str) -> LogEntry {
-    LogEntry {
-        date,
-        hour,
-        src_ip: ip.to_string(),
-        dst_ip: None,
-        src_port: None,
-        dst_port: port,
-        protocol: Some(proto.to_string()),
-        direction: Direction::Incoming,
-    }
+    let timestamp = date
+        .and_hms_opt(hour, 0, 0)
+        .expect("test timestamp should be valid");
+    let mut entry = LogEntry::new(timestamp, ip.to_string());
+    entry.dst_port = port;
+    entry.protocol = Some(proto.to_string());
+    entry.direction = Direction::Incoming;
+    entry
 }
 
 #[test]

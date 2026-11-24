@@ -3,6 +3,7 @@ use std::path::Path;
 pub mod csv;
 pub mod findings;
 pub mod json;
+pub(crate) mod safe;
 
 pub use csv::write_csv;
 pub use findings::{render_markdown, write_findings, FindingsFormat};

@@ -92,16 +92,15 @@ mod tests {
     use chrono::NaiveDate;
 
     fn entry(ip: &str) -> LogEntry {
-        LogEntry {
-            date: NaiveDate::from_ymd_opt(2026, 6, 28).unwrap(),
-            hour: 10,
-            src_ip: ip.to_string(),
-            dst_ip: None,
-            src_port: None,
-            dst_port: Some(22),
-            protocol: Some("TCP".to_string()),
-            direction: Direction::Incoming,
-        }
+        let timestamp = NaiveDate::from_ymd_opt(2026, 6, 28)
+            .unwrap()
+            .and_hms_opt(10, 0, 0)
+            .expect("test timestamp should be valid");
+        let mut entry = LogEntry::new(timestamp, ip.to_string());
+        entry.dst_port = Some(22);
+        entry.protocol = Some("TCP".to_string());
+        entry.direction = Direction::Incoming;
+        entry
     }
 
     #[test]

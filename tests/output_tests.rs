@@ -6,16 +6,14 @@ use ufw_report::models::{DailyReport, Direction, HourBreak, IpEntry, LogEntry, P
 use ufw_report::output;
 
 fn make_entry(date: NaiveDate, hour: u32, ip: &str, port: Option<u16>, proto: &str) -> LogEntry {
-    LogEntry {
-        date,
-        hour,
-        src_ip: ip.to_string(),
-        dst_ip: None,
-        src_port: None,
-        dst_port: port,
-        protocol: Some(proto.to_string()),
-        direction: Direction::Incoming,
-    }
+    let timestamp = date
+        .and_hms_opt(hour, 0, 0)
+        .expect("test timestamp should be valid");
+    let mut entry = LogEntry::new(timestamp, ip.to_string());
+    entry.dst_port = port;
+    entry.protocol = Some(proto.to_string());
+    entry.direction = Direction::Incoming;
+    entry
 }
 
 fn sample_entries() -> Vec<LogEntry> {
@@ -53,10 +51,49 @@ fn test_write_csv_to_file() {
     output::write_output(&sample_entries(), path_str, output::OutputFormat::Csv).unwrap();
 
     let contents = std::fs::read_to_string(path_str).unwrap();
-    assert!(contents.starts_with("date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction\n"));
-    assert!(contents.contains("2026-06-28,8,10.0.0.1,,,22,TCP,in"));
-    assert!(contents.contains("2026-06-29,22,10.0.0.3,,,443,TCP,in"));
+    assert!(contents
+        .starts_with("date,hour,src_ip,dst_ip,src_port,dst_port,protocol,direction,timestamp\n"));
+    assert!(contents.contains("2026-06-28,8,10.0.0.1,,,22,TCP,in,2026-06-28T08:00:00"));
+    assert!(contents.contains("2026-06-29,22,10.0.0.3,,,443,TCP,in,2026-06-29T22:00:00"));
     assert_eq!(contents.lines().count(), 4);
+}
+
+#[test]
+fn test_write_is_idempotent_for_identical_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("report.csv");
+    let path_str = path.to_str().unwrap();
+    let entries = sample_entries();
+
+    output::write_output(&entries, path_str, output::OutputFormat::Csv).unwrap();
+    let first = std::fs::read_to_string(&path).unwrap();
+    output::write_output(&entries, path_str, output::OutputFormat::Csv).unwrap();
+    let second = std::fs::read_to_string(&path).unwrap();
+
+    assert_eq!(first, second);
+}
+
+#[test]
+fn test_write_refuses_to_overwrite_different_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("report.csv");
+    let path_str = path.to_str().unwrap();
+    let first = vec![make_entry(
+        NaiveDate::from_ymd_opt(2026, 6, 28).unwrap(),
+        8,
+        "10.0.0.1",
+        Some(22),
+        "TCP",
+    )];
+
+    output::write_output(&first, path_str, output::OutputFormat::Csv).unwrap();
+    let before = std::fs::read_to_string(&path).unwrap();
+
+    let error =
+        output::write_output(&sample_entries(), path_str, output::OutputFormat::Csv).unwrap_err();
+
+    assert!(error.to_string().contains("collision"));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
 }
 
 #[test]
@@ -98,16 +135,17 @@ fn test_write_stdout_flag() {
 
 #[test]
 fn test_csv_all_fields_present() {
-    let entries = vec![LogEntry {
-        date: NaiveDate::from_ymd_opt(2026, 6, 28).unwrap(),
-        hour: 8,
-        src_ip: "192.168.1.100".to_string(),
-        dst_ip: Some("10.0.0.1".to_string()),
-        src_port: Some(33456),
-        dst_port: Some(443),
-        protocol: Some("TCP".to_string()),
-        direction: Direction::Outgoing,
-    }];
+    let timestamp = NaiveDate::from_ymd_opt(2026, 6, 28)
+        .unwrap()
+        .and_hms_opt(8, 30, 15)
+        .expect("test timestamp should be valid");
+    let mut entry = LogEntry::new(timestamp, "192.168.1.100".to_string());
+    entry.dst_ip = Some("10.0.0.1".to_string());
+    entry.src_port = Some(33456);
+    entry.dst_port = Some(443);
+    entry.protocol = Some("TCP".to_string());
+    entry.direction = Direction::Outgoing;
+    let entries = vec![entry];
 
     let mut buf = Vec::new();
     output::write_csv(&mut buf, &entries).unwrap();
