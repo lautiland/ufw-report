@@ -44,6 +44,12 @@ impl<R: Read> Read for HashingReader<R> {
     }
 }
 
+/// Computes the SHA-256 of a byte slice as lowercase hexadecimal.
+#[must_use]
+pub fn sha256_bytes(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
 /// Computes the SHA-256 of the raw bytes stored in `path`.
 ///
 /// # Errors
@@ -62,6 +68,11 @@ mod tests {
 
     #[test]
     fn test_sha256_known_vectors() {
+        assert_eq!(
+            sha256_bytes(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+
         let dir = tempfile::tempdir().unwrap();
         let empty = dir.path().join("empty");
         std::fs::write(&empty, "").unwrap();

@@ -1,7 +1,7 @@
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 
-use super::{ParseStats, PortEntry};
+use super::{CustodyManifest, ParseStats, PortEntry};
 
 /// Threat categories produced by the offline heuristics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -11,15 +11,23 @@ pub enum ThreatKind {
     BruteForce,
     DistributedBruteForce,
     PersistentSource,
+    MissingHours,
+    OutOfOrderEntries,
+    FutureDatedEntries,
+    InputError,
 }
 
 impl ThreatKind {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 9] = [
         Self::PortScan,
         Self::HostSweep,
         Self::BruteForce,
         Self::DistributedBruteForce,
         Self::PersistentSource,
+        Self::MissingHours,
+        Self::OutOfOrderEntries,
+        Self::FutureDatedEntries,
+        Self::InputError,
     ];
 
     #[must_use]
@@ -30,6 +38,10 @@ impl ThreatKind {
             Self::BruteForce => "Brute force",
             Self::DistributedBruteForce => "Distributed brute force",
             Self::PersistentSource => "Persistent source",
+            Self::MissingHours => "Missing log hours",
+            Self::OutOfOrderEntries => "Out-of-order log lines",
+            Self::FutureDatedEntries => "Future-dated log entries",
+            Self::InputError => "Input error",
         }
     }
 
@@ -41,7 +53,41 @@ impl ThreatKind {
             Self::BruteForce => "brute",
             Self::DistributedBruteForce => "dist",
             Self::PersistentSource => "persist",
+            Self::MissingHours => "gap",
+            Self::OutOfOrderEntries => "order",
+            Self::FutureDatedEntries => "future",
+            Self::InputError => "input",
         }
+    }
+
+    /// MITRE ATT&CK technique that cleanly describes this finding.
+    ///
+    /// Persistence, coverage, and input findings return `None` on purpose: no
+    /// defensible identifier exists for them.
+    #[must_use]
+    pub const fn technique(self) -> Option<&'static str> {
+        match self {
+            Self::PortScan => Some("T1046"),
+            Self::HostSweep => Some("T1018"),
+            Self::BruteForce | Self::DistributedBruteForce => Some("T1110"),
+            Self::PersistentSource
+            | Self::MissingHours
+            | Self::OutOfOrderEntries
+            | Self::FutureDatedEntries
+            | Self::InputError => None,
+        }
+    }
+
+    /// `true` for findings about evidence quality rather than observed attacks.
+    #[must_use]
+    pub const fn is_integrity(self) -> bool {
+        matches!(
+            self,
+            Self::MissingHours
+                | Self::OutOfOrderEntries
+                | Self::FutureDatedEntries
+                | Self::InputError
+        )
     }
 }
 
@@ -101,12 +147,24 @@ pub struct ThreatFinding {
     pub source_ip: Option<String>,
     pub target_ip: Option<String>,
     pub target_port: Option<u16>,
+    /// Distinct sources involved, for findings that describe a group.
+    pub sources: Vec<String>,
+    /// Distinct destination ports involved.
+    pub ports: Vec<u16>,
+    /// Distinct protocols involved.
+    pub protocols: Vec<String>,
     pub first_seen: NaiveDate,
     pub last_seen: NaiveDate,
+    /// Exact start of the evidence, to the second.
+    pub first_timestamp: NaiveDateTime,
+    /// Exact end of the evidence, to the second.
+    pub last_timestamp: NaiveDateTime,
     pub occurrences: u32,
     pub peak: u64,
     pub evidence: String,
     pub severity: Severity,
+    /// Defensible MITRE ATT&CK technique, when one applies.
+    pub technique: Option<String>,
 }
 
 /// Aggregation of every source inside one IPv4 /24 or IPv6 /64 prefix.
@@ -156,6 +214,7 @@ pub struct ThreatReport {
     pub subnets: Vec<SubnetAggregate>,
     pub coverage: CoverageSummary,
     pub summary: ThreatSummary,
+    pub custody: CustodyManifest,
 }
 
 impl ThreatReport {
@@ -187,6 +246,7 @@ impl ThreatReport {
                 top_source: None,
                 top_score: 0,
             },
+            custody: CustodyManifest::empty(),
         }
     }
 }

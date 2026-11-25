@@ -13,15 +13,15 @@
 max_decompressed_bytes = 4294967296
 
 [thresholds]
-# Distinct destination ports from one source in one hour.
+# Distinct destination ports from one source in one window.
 scan_ports_per_hour = 10
-# Distinct destination hosts from one source in one hour.
+# Distinct destination hosts from one source in one window.
 scan_hosts_per_hour = 10
-# Administrative-port attempts from one source in one hour.
+# Administrative-port attempts from one source in one window.
 bruteforce_attempts_per_hour = 20
 # Administrative-port attempts from one source in one day.
 bruteforce_attempts_per_day = 50
-# Distinct sources against the same host and port in one hour.
+# Distinct sources against the same host and port in one window.
 distributed_sources_per_hour = 20
 # Minimum active days for a persistent-source finding.
 persistence_min_days = 3
@@ -31,6 +31,17 @@ persistence_min_blocks = 20
 subnet_min_sources = 5
 # Profiles below this 0-100 score are left out of the ranking.
 min_score = 25
+# Sliding-window width per detector, in minutes (default: 60).
+scan_window_minutes = 60
+bruteforce_window_minutes = 60
+distributed_window_minutes = 60
+
+[integrity]
+# Promote coverage anomalies to evidence-integrity findings.
+# A value of 0 disables that check.
+missing_hours = 24
+out_of_order_lines = 10
+future_entries = 1
 
 [subnets]
 ipv4_prefix = 24

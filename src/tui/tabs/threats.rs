@@ -195,6 +195,125 @@ fn render_networks_table(frame: &mut Frame, area: Rect, threat: &ThreatReport, s
     frame.render_widget(table, area);
 }
 
+fn render_inputs_table(frame: &mut Frame, area: Rect, threat: &ThreatReport, selection: usize) {
+    let files = &threat.custody.files;
+    let len = files.len();
+    let visible = usize::from(area.height.saturating_sub(3)).max(1);
+    let (offset, end) = visible_window(len, selection, visible);
+    let selected = App::clamp_index(selection, len);
+
+    let rows: Vec<Row> = files[offset..end]
+        .iter()
+        .enumerate()
+        .map(|(position, file)| {
+            let index = offset + position;
+            let status = file_status(file);
+            let style = if index == selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
+            } else if file.error.is_some() {
+                Style::default().fg(Color::Red)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let digest = if file.sha256.is_empty() {
+                "-".to_string()
+            } else {
+                format!("{}…", &file.sha256[..12.min(file.sha256.len())])
+            };
+            Row::new(vec![
+                Cell::from(format!("{}", index + 1)),
+                Cell::from(file.path.clone()),
+                Cell::from(file.size_bytes.to_string()),
+                Cell::from(format!(
+                    "{}/{}",
+                    file.parse_stats.parsed_block_lines(),
+                    file.parse_stats.block_lines
+                )),
+                Cell::from(digest),
+                Cell::from(status),
+            ])
+            .style(style)
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(4),
+            Constraint::Min(24),
+            Constraint::Length(12),
+            Constraint::Length(10),
+            Constraint::Length(14),
+            Constraint::Length(22),
+        ],
+    )
+    .header(
+        Row::new(vec!["#", "Path", "Bytes", "Blocks", "SHA-256", "Status"])
+            .style(Style::default().add_modifier(Modifier::BOLD)),
+    )
+    .block(Block::default().borders(Borders::ALL).title(format!(
+        " {} ({} items)  [v] toggle ",
+        ThreatsView::Inputs.title(),
+        len
+    )));
+    frame.render_widget(table, area);
+}
+
+fn file_status(file: &crate::models::EvidenceFile) -> String {
+    if let Some(error) = &file.error {
+        return format!("failed: {}", error.message);
+    }
+    if file.from_cache {
+        "ok (cache)".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn file_detail_lines(file: &crate::models::EvidenceFile) -> Vec<Line<'static>> {
+    let digest = if file.sha256.is_empty() {
+        "-".to_string()
+    } else {
+        file.sha256.clone()
+    };
+    let modified = file
+        .modified_at
+        .map_or_else(|| "-".to_string(), |value| value.to_rfc3339());
+    let error = file
+        .error
+        .as_ref()
+        .map_or_else(|| "-".to_string(), |error| error.message.clone());
+    vec![
+        Line::from(vec![Span::styled(
+            file.path.clone(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(format!("Canonical: {}", file.canonical_path)),
+        Line::from(format!(
+            "Size: {} bytes | Decompressed: {} bytes",
+            file.size_bytes, file.decompressed_bytes
+        )),
+        Line::from(format!(
+            "Modified: {modified} | Compressed: {}",
+            file.compressed
+        )),
+        Line::from(format!(
+            "Blocks: {}/{} parsed | Cache: {}",
+            file.parse_stats.parsed_block_lines(),
+            file.parse_stats.block_lines,
+            file.from_cache
+        )),
+        Line::from(format!("SHA-256: {digest}")),
+        Line::from(format!("Status: {}", file_status(file))),
+        Line::from(format!("Error: {error}")),
+    ]
+}
+
 fn source_detail_lines(profile: &crate::models::SourceProfile) -> Vec<Line<'static>> {
     let tags = profile
         .findings
@@ -315,6 +434,13 @@ fn render_detail(
                 subnet_detail_lines,
             )
         }
+        ThreatsView::Inputs => {
+            let index = App::clamp_index(selection, threat.custody.files.len());
+            threat.custody.files.get(index).map_or_else(
+                || vec![Line::from("No input files were recorded for this run.")],
+                file_detail_lines,
+            )
+        }
     };
 
     frame.render_widget(Paragraph::new(lines).block(block), area);
@@ -339,6 +465,7 @@ pub(crate) fn render_threats(
     match view {
         ThreatsView::Sources => render_sources_table(frame, table_area, threat, selection),
         ThreatsView::Networks => render_networks_table(frame, table_area, threat, selection),
+        ThreatsView::Inputs => render_inputs_table(frame, table_area, threat, selection),
     }
     render_detail(frame, detail_area, threat, view, selection);
 }
@@ -387,7 +514,11 @@ mod tests {
         let backend = TestBackend::new(120, 30);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        for view in [ThreatsView::Sources, ThreatsView::Networks] {
+        for view in [
+            ThreatsView::Sources,
+            ThreatsView::Networks,
+            ThreatsView::Inputs,
+        ] {
             terminal
                 .draw(|frame| render_threats(frame, frame.area(), &report, view, 0))
                 .unwrap();
@@ -400,7 +531,11 @@ mod tests {
         let backend = TestBackend::new(120, 30);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        for view in [ThreatsView::Sources, ThreatsView::Networks] {
+        for view in [
+            ThreatsView::Sources,
+            ThreatsView::Networks,
+            ThreatsView::Inputs,
+        ] {
             terminal
                 .draw(|frame| render_threats(frame, frame.area(), &report, view, 3))
                 .unwrap();

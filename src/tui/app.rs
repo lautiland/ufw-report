@@ -69,7 +69,7 @@ impl Tab {
             Self::Daily => "←→ Select day  Enter Hourly",
             Self::Hourly => "←→ Day  ↑↓ Hour  PgUp/PgDn Logs",
             Self::Raw => "↑↓ Scroll  PgUp/PgDn Fast scroll",
-            Self::Threats => "↑↓ Select  PgUp/PgDn Page  v Sources/Networks",
+            Self::Threats => "↑↓ Select  PgUp/PgDn Page  v Sources/Networks/Inputs",
         }
     }
 }
@@ -79,6 +79,7 @@ impl Tab {
 pub enum ThreatsView {
     Sources,
     Networks,
+    Inputs,
 }
 
 impl ThreatsView {
@@ -86,7 +87,8 @@ impl ThreatsView {
     pub const fn toggle(self) -> Self {
         match self {
             Self::Sources => Self::Networks,
-            Self::Networks => Self::Sources,
+            Self::Networks => Self::Inputs,
+            Self::Inputs => Self::Sources,
         }
     }
 
@@ -95,6 +97,7 @@ impl ThreatsView {
         match self {
             Self::Sources => "Threat Sources",
             Self::Networks => "Network Groups",
+            Self::Inputs => "Input Files",
         }
     }
 }
@@ -138,6 +141,7 @@ impl App {
         match self.threats_view {
             ThreatsView::Sources => self.threat.profiles.len(),
             ThreatsView::Networks => self.threat.subnets.len(),
+            ThreatsView::Inputs => self.threat.custody.files.len(),
         }
     }
 
@@ -253,7 +257,8 @@ mod tests {
     #[test]
     fn test_threats_view_toggles() {
         assert_eq!(ThreatsView::Sources.toggle(), ThreatsView::Networks);
-        assert_eq!(ThreatsView::Networks.toggle(), ThreatsView::Sources);
+        assert_eq!(ThreatsView::Networks.toggle(), ThreatsView::Inputs);
+        assert_eq!(ThreatsView::Inputs.toggle(), ThreatsView::Sources);
     }
 
     #[test]

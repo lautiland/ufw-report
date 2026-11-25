@@ -99,12 +99,14 @@ fn main() -> anyhow::Result<()> {
     let findings_format = config.findings.as_deref().map(FindingsFormat::resolve);
     let needs_analysis = findings_format.is_some() || output_format.is_none();
     let threat = if needs_analysis {
-        Some(ufw_report::threat::analyze(
+        Some(ufw_report::threat::analyze_with_custody(
             &parse_result.all_entries,
             config.from_date,
             config.to_date,
             parse_result.stats,
             &analysis_config,
+            &parse_result.files,
+            env!("CARGO_PKG_VERSION"),
         )?)
     } else {
         None
