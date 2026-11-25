@@ -233,6 +233,33 @@ fn test_sha256_covers_raw_file_bytes() {
 }
 
 #[test]
+fn test_rotation_set_keeps_per_file_evidence() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("ufw.log");
+    let first = dir.path().join("ufw.log.1");
+    let second = dir.path().join("ufw.log.2.gz");
+    write_plain(&base, &block_line("2026-06-28T10:00:00", "10.0.0.1", 22));
+    write_plain(&first, &block_line("2026-06-27T10:00:00", "10.0.0.2", 80));
+    write_gzip(&second, &block_line("2026-06-26T10:00:00", "10.0.0.3", 443));
+
+    let result = parse(std::slice::from_ref(&base), dir.path(), true);
+
+    assert_eq!(result.files.len(), 3);
+    assert_eq!(result.all_entries.len(), 3);
+    for file in &result.files {
+        let raw = std::fs::read(PathBuf::from(&file.path)).unwrap();
+        let expected = format!("{:x}", Sha256::digest(&raw));
+        assert_eq!(file.sha256, expected, "{}", file.path);
+        assert_eq!(file.parse_stats.block_lines, 1);
+        assert!(file.error.is_none());
+    }
+    assert!(result
+        .files
+        .iter()
+        .any(|file| file.path.ends_with("ufw.log.2.gz") && file.compressed));
+}
+
+#[test]
 fn test_cache_is_validated_per_file() {
     let dir = tempfile::tempdir().unwrap();
     let cache_dir = tempfile::tempdir().unwrap();

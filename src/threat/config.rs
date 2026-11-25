@@ -5,7 +5,8 @@ use anyhow::Context;
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
 
-/// Heuristic thresholds. All windows are one hour wide in v1.
+/// Heuristic thresholds. The `*_per_hour` keys keep their historical names but
+/// are evaluated over the matching configurable window (60 minutes by default).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Thresholds {
@@ -18,6 +19,9 @@ pub struct Thresholds {
     pub persistence_min_blocks: u64,
     pub subnet_min_sources: u32,
     pub min_score: u8,
+    pub scan_window_minutes: u32,
+    pub bruteforce_window_minutes: u32,
+    pub distributed_window_minutes: u32,
 }
 
 impl Default for Thresholds {
@@ -32,6 +36,30 @@ impl Default for Thresholds {
             persistence_min_blocks: 20,
             subnet_min_sources: 5,
             min_score: 25,
+            scan_window_minutes: 60,
+            bruteforce_window_minutes: 60,
+            distributed_window_minutes: 60,
+        }
+    }
+}
+
+/// Thresholds that promote coverage anomalies to evidence-integrity findings.
+///
+/// A value of `0` disables that check.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IntegrityConfig {
+    pub missing_hours: u32,
+    pub out_of_order_lines: u64,
+    pub future_entries: u64,
+}
+
+impl Default for IntegrityConfig {
+    fn default() -> Self {
+        Self {
+            missing_hours: 24,
+            out_of_order_lines: 10,
+            future_entries: 1,
         }
     }
 }
@@ -134,6 +162,7 @@ pub struct AnalysisConfig {
     pub ports: PortsConfig,
     pub allowlist: AllowlistConfig,
     pub scoring: ScoringConfig,
+    pub integrity: IntegrityConfig,
 }
 
 impl AnalysisConfig {
@@ -218,6 +247,25 @@ impl AnalysisConfig {
             self.subnets.ipv6_prefix <= 128,
             "subnets.ipv6_prefix must be between 0 and 128"
         );
+        for (key, value) in [
+            (
+                "thresholds.scan_window_minutes",
+                self.thresholds.scan_window_minutes,
+            ),
+            (
+                "thresholds.bruteforce_window_minutes",
+                self.thresholds.bruteforce_window_minutes,
+            ),
+            (
+                "thresholds.distributed_window_minutes",
+                self.thresholds.distributed_window_minutes,
+            ),
+        ] {
+            anyhow::ensure!(
+                (1..=10_080).contains(&value),
+                "{key} must be between 1 and 10080 minutes"
+            );
+        }
         for cidr in &self.allowlist.cidrs {
             IpNet::from_str(cidr)
                 .with_context(|| format!("allowlist.cidrs contains an invalid CIDR: '{cidr}'"))?;
@@ -242,6 +290,12 @@ mod tests {
         assert_eq!(config.thresholds.persistence_min_blocks, 20);
         assert_eq!(config.thresholds.subnet_min_sources, 5);
         assert_eq!(config.thresholds.min_score, 25);
+        assert_eq!(config.thresholds.scan_window_minutes, 60);
+        assert_eq!(config.thresholds.bruteforce_window_minutes, 60);
+        assert_eq!(config.thresholds.distributed_window_minutes, 60);
+        assert_eq!(config.integrity.missing_hours, 24);
+        assert_eq!(config.integrity.out_of_order_lines, 10);
+        assert_eq!(config.integrity.future_entries, 1);
         assert_eq!(config.subnets.ipv4_prefix, 24);
         assert_eq!(config.subnets.ipv6_prefix, 64);
         assert!(config.ports.admin.contains(&22));
@@ -285,6 +339,14 @@ mod tests {
             persistence_min_blocks = 8
             subnet_min_sources = 9
             min_score = 10
+            scan_window_minutes = 15
+            bruteforce_window_minutes = 30
+            distributed_window_minutes = 45
+
+            [integrity]
+            missing_hours = 12
+            out_of_order_lines = 5
+            future_entries = 2
 
             [subnets]
             ipv4_prefix = 16
@@ -307,6 +369,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(config.thresholds.min_score, 10);
+        assert_eq!(config.thresholds.scan_window_minutes, 15);
+        assert_eq!(config.integrity.missing_hours, 12);
         assert_eq!(config.subnets.ipv4_prefix, 16);
         assert_eq!(config.ports.admin, vec![22, 3389]);
         assert_eq!(config.allowlist.cidrs.len(), 2);
@@ -347,6 +411,41 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("scan_ports_per_hour"));
+    }
+
+    #[test]
+    fn test_invalid_window_is_rejected() {
+        let error = AnalysisConfig::from_toml(
+            r"
+            [thresholds]
+            scan_window_minutes = 0
+            ",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("scan_window_minutes"));
+
+        let error = AnalysisConfig::from_toml(
+            r"
+            [thresholds]
+            distributed_window_minutes = 10081
+            ",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("distributed_window_minutes"));
+    }
+
+    #[test]
+    fn test_integrity_zero_disables_without_validation_error() {
+        let config = AnalysisConfig::from_toml(
+            r"
+            [integrity]
+            missing_hours = 0
+            out_of_order_lines = 0
+            future_entries = 0
+            ",
+        )
+        .unwrap();
+        assert_eq!(config.integrity.missing_hours, 0);
     }
 
     #[test]

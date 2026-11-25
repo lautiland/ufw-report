@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-24
 
-**Status**: Draft
+**Status**: Implemented on `main` (pending release)
 
 **Input**: User description: "Add forensic triage for rotated and compressed UFW logs: multi-file and .gz ingestion, second-precision timestamps, sliding-window heuristics, chain-of-custody metadata, and MITRE ATT&CK mapping where defensible. Keep the tool offline and read-only."
 
@@ -25,16 +25,15 @@ Already present on `main`:
 - Coverage counters for missing hours, out-of-order lines, and future-dated
   entries.
 
-Still missing or needing verification in the plan:
+Completed by this implementation:
 
-- Sliding-window heuristics: scan, sweep, brute force, and distributed brute force
-  still use fixed hourly buckets.
-- Chain-of-custody manifest in the findings exports, including execution metadata
-  and a configuration hash.
-- MITRE ATT&CK identifiers on findings.
-- Promotion of coverage anomalies to integrity findings.
-- Documentation and version alignment: `README.md` and `Cargo.toml` still
-  describe 0.2.1.
+- Sliding-window heuristics for scan, sweep, brute force, and distributed brute
+  force, with exact second-precision finding intervals.
+- Chain-of-custody manifest in the findings exports, including execution
+  metadata and a configuration hash.
+- MITRE ATT&CK identifiers on findings and evidence-integrity findings for
+  coverage anomalies and unreadable inputs.
+- Documentation, configuration examples, and version alignment for v0.3.0.
 
 > **Planning input:** The pre-Spec Kit WBS that detailed this milestone was
 > removed during the documentation consolidation. Its content remains in Git

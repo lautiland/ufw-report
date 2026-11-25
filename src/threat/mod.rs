@@ -4,25 +4,30 @@ pub(crate) mod aggregate;
 pub(crate) mod allowlist;
 pub(crate) mod bruteforce;
 pub(crate) mod coverage;
+pub(crate) mod integrity;
 pub(crate) mod offenders;
 pub(crate) mod scan;
 pub(crate) mod scoring;
 pub(crate) mod subnets;
 pub(crate) mod util;
+pub(crate) mod window;
 
 use std::collections::HashMap;
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 
 use crate::models::{
-    LogEntry, ParseStats, Severity, SourceProfile, ThreatFinding, ThreatKind, ThreatReport,
-    ThreatSummary,
+    CustodyManifest, EvidenceFile, LogEntry, ParseStats, Severity, SourceProfile, ThreatFinding,
+    ThreatKind, ThreatReport, ThreatSummary,
 };
 
 use self::allowlist::Allowlist;
 use self::config::{AnalysisConfig, Thresholds};
 
-/// Runs the read-only analysis pipeline.
+/// Runs the read-only analysis pipeline without input provenance.
+///
+/// Callers that have the resolved input files (the CLI and TUI) should use
+/// [`analyze_with_custody`] so the report carries a custody manifest.
 ///
 /// # Errors
 ///
@@ -33,6 +38,31 @@ pub fn analyze(
     to: NaiveDate,
     stats: ParseStats,
     config: &AnalysisConfig,
+) -> anyhow::Result<ThreatReport> {
+    analyze_with_custody(
+        entries,
+        from,
+        to,
+        stats,
+        config,
+        &[],
+        env!("CARGO_PKG_VERSION"),
+    )
+}
+
+/// Runs the read-only analysis pipeline and records run-level provenance.
+///
+/// # Errors
+///
+/// Returns an error when the allowlist contains an invalid CIDR.
+pub fn analyze_with_custody(
+    entries: &[LogEntry],
+    from: NaiveDate,
+    to: NaiveDate,
+    stats: ParseStats,
+    config: &AnalysisConfig,
+    files: &[EvidenceFile],
+    tool_version: &str,
 ) -> anyhow::Result<ThreatReport> {
     let allowlist = Allowlist::parse(&config.allowlist.cidrs)?;
     let admin_ports = config.ports.admin_set();
@@ -53,7 +83,16 @@ pub fn analyze(
         &config.thresholds,
         &allowlist,
     ));
-    findings.extend(persistence_findings(&profiles, &config.thresholds));
+    findings.extend(persistence_findings(entries, &profiles, &config.thresholds));
+
+    let coverage = coverage::build_coverage(entries, from, to, stats);
+    findings.extend(integrity::build_findings(
+        &coverage,
+        files,
+        &config.integrity,
+        from,
+        to,
+    ));
 
     attach_findings(&mut profiles, &findings);
     scoring::apply_scores(&mut profiles, &config.scoring);
@@ -62,13 +101,14 @@ pub fn analyze(
     sort_profiles(&mut profiles);
     sort_findings(&mut findings);
 
-    let coverage = coverage::build_coverage(entries, from, to, stats);
     let subnets = subnets::build_subnets(
         entries,
         &config.subnets,
         config.thresholds.subnet_min_sources,
     );
     let summary = build_summary(total_sources, &profiles, findings.len());
+    let effective_config = toml::to_string(config).unwrap_or_default();
+    let custody = CustodyManifest::new(files.to_vec(), tool_version, effective_config);
 
     Ok(ThreatReport {
         from,
@@ -78,30 +118,71 @@ pub fn analyze(
         subnets,
         coverage,
         summary,
+        custody,
     })
 }
 
-fn persistence_findings(profiles: &[SourceProfile], thresholds: &Thresholds) -> Vec<ThreatFinding> {
+fn persistence_findings(
+    entries: &[LogEntry],
+    profiles: &[SourceProfile],
+    thresholds: &Thresholds,
+) -> Vec<ThreatFinding> {
+    let mut spans: HashMap<&str, (NaiveDateTime, NaiveDateTime)> = HashMap::new();
+    for entry in entries {
+        spans
+            .entry(entry.src_ip.as_str())
+            .and_modify(|(first, last)| {
+                *first = (*first).min(entry.timestamp);
+                *last = (*last).max(entry.timestamp);
+            })
+            .or_insert((entry.timestamp, entry.timestamp));
+    }
+
     profiles
         .iter()
         .filter(|profile| {
             profile.active_days >= thresholds.persistence_min_days
                 && profile.total_blocks >= thresholds.persistence_min_blocks
         })
-        .map(|profile| ThreatFinding {
-            kind: ThreatKind::PersistentSource,
-            source_ip: Some(profile.ip.clone()),
-            target_ip: None,
-            target_port: None,
-            first_seen: profile.first_seen,
-            last_seen: profile.last_seen,
-            occurrences: profile.active_days,
-            peak: profile.total_blocks,
-            evidence: format!(
-                "{} active days and {} blocked attempts",
-                profile.active_days, profile.total_blocks
-            ),
-            severity: Severity::Medium,
+        .map(|profile| {
+            let (first_timestamp, last_timestamp) =
+                spans.get(profile.ip.as_str()).copied().unwrap_or_else(|| {
+                    (
+                        profile
+                            .first_seen
+                            .and_hms_opt(0, 0, 0)
+                            .expect("midnight is valid"),
+                        profile
+                            .last_seen
+                            .and_hms_opt(23, 59, 59)
+                            .expect("end of day is valid"),
+                    )
+                });
+            ThreatFinding {
+                kind: ThreatKind::PersistentSource,
+                source_ip: Some(profile.ip.clone()),
+                target_ip: None,
+                target_port: None,
+                sources: Vec::new(),
+                ports: profile.top_ports.iter().map(|port| port.port).collect(),
+                protocols: profile
+                    .top_protocols
+                    .iter()
+                    .map(|(protocol, _)| protocol.clone())
+                    .collect(),
+                first_seen: profile.first_seen,
+                last_seen: profile.last_seen,
+                first_timestamp,
+                last_timestamp,
+                occurrences: profile.active_days,
+                peak: profile.total_blocks,
+                evidence: format!(
+                    "{} active days and {} blocked attempts",
+                    profile.active_days, profile.total_blocks
+                ),
+                severity: Severity::Medium,
+                technique: ThreatKind::PersistentSource.technique().map(str::to_string),
+            }
         })
         .collect()
 }
@@ -305,9 +386,11 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(report.findings.len(), 1);
-        assert_eq!(report.findings[0].kind, ThreatKind::PersistentSource);
         assert_eq!(report.profiles.len(), 1);
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.kind == ThreatKind::PersistentSource));
         assert_eq!(report.profiles[0].active_days, 3);
         assert!(report.profiles[0].risk_score >= 25);
     }

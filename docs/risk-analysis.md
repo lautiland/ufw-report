@@ -64,30 +64,29 @@ to do if it materializes.
 - **Notes:** Findings are derived only from the log, so context that is not in
   the log cannot be considered.
 
-## Risk 4: False negatives from hourly bucketing
+## Risk 4: False negatives from short bursts
 
 - **Category:** Functional
-- **Description:** Short bursts that cross an hour boundary or finish inside one
-  hour are aggregated.
-- **Causes:** The detection engine still aggregates entries into one-hour buckets
-  even though `LogEntry` now carries second-precision timestamps, so the analysis
-  cannot see sub-hour timing.
-- **Consequences:** A fast scan may fall below a per-hour threshold even though
-  it was aggressive.
-- **Probability:** Medium
+- **Description:** A short burst that is diluted by a wide analysis window can
+  fall below a rate threshold.
+- **Causes:** Detection windows are configurable and default to 60 minutes; a
+  burst spread over a longer period than the window is reported as separate
+  occurrences.
+- **Consequences:** A slow, low-rate scan may need a wider window or a lower
+  threshold to be flagged.
+- **Probability:** Low
 - **Impact:** Medium
 - **Trigger:** A reported incident that the tool did not flag.
-- **Status:** In active mitigation for 001.
-- **Mitigation:** v0.3.0 replaces the fixed hourly buckets with second-precision
-  timestamps and configurable sliding windows. Until that ships, thresholds are
-  conservative by default, and the coverage and ranking sections still surface
-  high-volume sources even without a finding.
-- **Contingency:** Lower the relevant threshold in the config file for the
-  affected environment.
-- **Notes:** The schema change is no longer out of scope: it is tracked in
-  [`specs/001-forensic-triage/spec.md`](../specs/001-forensic-triage/spec.md).
-  Risk 4 should move to Low once the sliding-window engine ships and its fixtures
-  pass.
+- **Status:** Mitigated in v0.3.0.
+- **Mitigation:** Sliding windows are evaluated on exact second-precision
+  timestamps, so bursts crossing an hour boundary are detected as one event.
+  Thresholds and window widths are configurable, and coverage plus risk ranking
+  still surface high-volume sources without a finding.
+- **Contingency:** Widen `*_window_minutes` or lower the relevant threshold in
+  the config file for the affected environment.
+- **Notes:** Fixtures cover bursts crossing the hour boundary and verify that a
+  narrower window suppresses the finding. See
+  [`specs/001-forensic-triage/quickstart.md`](../specs/001-forensic-triage/quickstart.md).
 
 ## Risk 5: Runtime failures due to `glibc` incompatibility
 

@@ -9,6 +9,18 @@ Before 1.0.0, minor versions may include breaking changes.
 
 ### Added
 
+- Configurable sliding-window detection for port scans, host sweeps, brute
+  force, and distributed brute force, with exact second-precision start/end
+  timestamps on every finding.
+- Chain-of-custody manifest in JSON and Markdown findings exports: execution
+  timestamp, hostname, tool version, effective-config SHA-256, per-file SHA-256
+  and read status, and the heuristic-triage disclaimer.
+- MITRE ATT&CK identifiers on defensible findings (`T1046`, `T1018`, `T1110`).
+- Evidence-integrity findings for missing hours, out-of-order lines,
+  future-dated entries, and unreadable inputs, with configurable `[integrity]`
+  thresholds.
+- Inputs view in the Threats tab (`v` cycles Sources / Networks / Inputs) with
+  per-file size, parse counters, SHA-256, cache state, and errors.
 - GitHub Spec Kit adoption with the OpenCode integration, a project
   constitution, and generated workflow commands.
 - Specifications for forensic triage, incident isolation, async/streaming
@@ -16,6 +28,14 @@ Before 1.0.0, minor versions may include breaking changes.
 
 ### Changed
 
+- Analysis configuration adds `scan_window_minutes`,
+  `bruteforce_window_minutes`, and `distributed_window_minutes` (60 by default).
+  The existing `*_per_hour` keys keep their names and now apply to the
+  configured window.
+- Findings JSON adds `sources`, `ports`, `protocols`, `technique`,
+  `first_timestamp`, `last_timestamp`, and `custody`. Existing keys are
+  unchanged; the CSV/JSON entry schema is unchanged.
+- Version alignment for the v0.3.0 forensic-triage milestone.
 - Consolidated the documentation around `README.md`, `docs/roadmap.md`,
   `docs/risk-analysis.md`, `docs/releasing.md`, and `specs/`.
 - Merged the shipped-behavior notes into `README.md` and the product context into

@@ -59,11 +59,12 @@ The binary is written to `target/release/ufw-report`.
 
 ## Status
 
-`0.2.1` is the latest published release. It ships precompiled binaries for the
-three supported targets. `main` already includes part of the v0.3.0
-forensic-triage work: second-precision timestamps and multi-file/rotated
-ingestion with SHA-256. The remaining v0.3.0 work is specified in
-[`specs/001-forensic-triage/spec.md`](specs/001-forensic-triage/spec.md), and the
+`0.2.1` is the latest published release. `main` targets the complete v0.3.0
+forensic-triage milestone: rotated/compressed ingestion with SHA-256,
+second-precision timestamps, configurable sliding-window detection, a
+chain-of-custody block in the findings exports, MITRE ATT&CK mapping, and
+evidence-integrity findings. The work is specified in
+[`specs/001-forensic-triage/spec.md`](specs/001-forensic-triage/spec.md) and the
 backlog is indexed in [`docs/roadmap.md`](docs/roadmap.md). The project is
 pre-1.0, so CLI flags and output formats may still change between minor versions.
 
@@ -135,24 +136,36 @@ capped volume, port diversity, administrative hits, persistence, and findings.
 Severity bands are Low (0-24), Medium (25-49), High (50-74), and Critical
 (75-100).
 
-The heuristics use one-hour buckets:
+The heuristics evaluate configurable moving windows, 60 minutes wide by default,
+so bursts that cross an hour boundary are detected as one event:
 
 - **Port scan** — at least `scan_ports_per_hour` distinct destination ports
-  from one source in one hour.
+  from one source within `scan_window_minutes`.
 - **Host sweep** — at least `scan_hosts_per_hour` distinct destination hosts
-  from one source in one hour.
+  from one source within `scan_window_minutes`.
 - **Brute force** — at least `bruteforce_attempts_per_hour` attempts against
-  administrative ports in one hour, or `bruteforce_attempts_per_day` in one
-  day.
+  administrative ports within `bruteforce_window_minutes`, or
+  `bruteforce_attempts_per_day` in one day.
 - **Distributed brute force** — at least `distributed_sources_per_hour`
-  distinct sources against the same host and port in one hour.
+  distinct sources against the same host and port within
+  `distributed_window_minutes`.
 - **Persistent source** — at least `persistence_min_days` active days and
   `persistence_min_blocks` blocks.
+
+The legacy `*_per_hour` key names are retained; they mean "per configured
+window". Every finding carries exact first/last timestamps, the ports,
+protocols, and sources involved, and a MITRE ATT&CK technique where the mapping
+is defensible: `T1046` (port scan), `T1018` (host sweep), and `T1110` (brute
+force and distributed brute force). Persistence and integrity findings leave the
+technique empty.
 
 Sources are also grouped by IPv4 `/24` and IPv6 `/64` prefixes. The coverage
 section reports how many hours in the requested range had data, the longest gap,
 and parser counters such as unparsed block lines, out-of-order lines, and
 future-dated entries, so "no findings" can be told apart from "no usable log".
+When those anomalies exceed the `[integrity]` thresholds, they also appear as
+findings (`MissingHours`, `OutOfOrderEntries`, `FutureDatedEntries`), as does
+every input that could not be read completely (`InputError`).
 
 CIDRs in `allowlist.cidrs` are excluded from findings and risk scores, but not
 from the raw data or coverage counters. Profiles below `min_score` are left out
@@ -168,7 +181,12 @@ Every section and key is optional. A complete example lives in
 ```toml
 [thresholds]
 scan_ports_per_hour = 10
+scan_window_minutes = 60
 min_score = 25
+
+[integrity]
+missing_hours = 24
+future_entries = 1
 
 [allowlist]
 cidrs = ["192.0.2.0/24"]
@@ -180,7 +198,7 @@ finding_weight = 10
 ### Findings export
 
 `--findings <PATH>` writes the full report (summary, coverage, findings,
-profiles, and network groups):
+profiles, network groups, and custody manifest):
 
 - Paths ending in `.md` produce Markdown.
 - Any other path produces pretty-printed JSON.
@@ -190,6 +208,16 @@ profiles, and network groups):
 
 When `--findings` is used the tool writes the file and exits, unless an entry
 export (`--csv` or `-o`) is also requested, in which case both files are written.
+
+Both formats include a **chain-of-custody** block: execution timestamp in UTC,
+best-effort hostname, tool version, SHA-256 of the effective configuration, the
+effective configuration itself (window widths, thresholds, allowlist), and one
+row per input file with its path, size, SHA-256, parsed-block counters, and read
+status (including failures). The digest always covers the raw bytes on disk
+(compressed bytes for `.gz`), so it can be reproduced with `sha256sum`. Both
+formats also state the disclaimer: findings are heuristic triage indicators, the
+hashes certify only the bytes read during that execution, and the report is not
+a full forensic investigation.
 
 ## Cache
 
@@ -201,6 +229,12 @@ The parser cache is enabled by default and is stored per user:
 
 The cache stores all parsed entries together with the log size and modification time, plus cache and parser version numbers. It is invalidated automatically when the log changes or when the cache format changes, and it can serve any date range because the filtering happens after loading.
 
+Each input file has its own cache entry, keyed by canonical path, size,
+modification time, and cache/parser versions, and revalidated against the file's
+SHA-256. Adding, removing, or modifying a rotated sibling therefore cannot
+produce a stale combined result: unchanged files are reused and the new or
+changed file is read again.
+
 Use `--no-cache` to disable both reading and writing. Cache write failures are non-fatal and reported as warnings.
 
 ## Features
@@ -209,6 +243,12 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
 - Second-precision timestamps preserved through parsing, cache, and export
 - Multi-file and rotated `.gz` ingestion with per-file SHA-256 and parse
   counters
+- Configurable sliding-window detection for scans, sweeps, brute force, and
+  distributed brute force
+- Chain-of-custody manifest and disclaimer in JSON and Markdown findings exports
+- MITRE ATT&CK mapping (`T1046`, `T1018`, `T1110`) where defensible
+- Evidence-integrity findings for coverage gaps, out-of-order lines,
+  future-dated entries, and unreadable inputs
 - Protocol normalization (numeric values to names)
 - Traffic direction detection (`IN=` / `OUT=`)
 - Configurable date range (default: last 7 days)
@@ -218,6 +258,7 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
 - 0-100 risk score with Low/Medium/High/Critical bands
 - Log coverage and parser quality counters
 - Five TUI views: Overview, Daily, Hourly, Raw, and Threats
+- Per-file provenance view in Threats (Sources / Networks / Inputs)
 - CSV and JSON export, including stdout pipelines
 - JSON and Markdown findings export
 
@@ -232,7 +273,7 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
 | `Shift+↑` `Shift+↓` | Fast scroll in Overview, Raw, and Threats |
 | `PgUp` `PgDn` | Page scroll in Overview, Raw, the Hourly log table, and Threats |
 | `Shift+PgUp` `Shift+PgDn` | Fast page scroll |
-| `v` | Toggle Sources / Networks in Threats |
+| `v` | Toggle Sources / Networks / Inputs in Threats |
 | `Enter` | Open the selected day in Hourly |
 | `q` / `Esc` | Quit |
 
@@ -245,10 +286,9 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
   need memory proportional to the number of blocked entries and delay the UI
   while they are parsed. Asynchronous parsing is specified in
   [`specs/003-async-streaming-parsing/spec.md`](specs/003-async-streaming-parsing/spec.md).
-- Entries carry second-precision timestamps, but the detection heuristics still
-  aggregate them into one-hour buckets. Sub-hour bursts are therefore reported at
-  hour resolution until the sliding-window work in
-  [`specs/001-forensic-triage/spec.md`](specs/001-forensic-triage/spec.md) ships.
+- Detection uses configurable sliding windows that default to 60 minutes. A burst
+  longer than the configured window is reported as separate occurrences; widen
+  the window when investigating slow, low-rate activity.
 - There is no GeoIP, ASN, or external reputation data: findings come only from
   the local log.
 - Only GitHub Releases are supported today. `.deb` packages, PPAs, and
@@ -265,6 +305,9 @@ Use `--no-cache` to disable both reading and writing. Cache write failures are n
   `/etc/protocols`.
 - CSV/JSON columns: `date, hour, src_ip, dst_ip, src_port, dst_port, protocol,
   direction, timestamp`.
+- Findings JSON adds exact `first_timestamp`/`last_timestamp`, `sources`,
+  `ports`, `protocols`, `technique`, and a run-level `custody` object. Existing
+  keys keep their meaning; the CSV/JSON entry schema is unchanged.
 - Dependency versions live in `Cargo.toml`; they are not duplicated here.
 - The panic hook restores the terminal if the TUI crashes.
 
@@ -297,10 +340,11 @@ and a locked release build. See [`docs/releasing.md`](docs/releasing.md).
 cargo test
 ```
 
-The suite has 184 tests covering the parser, date range handling, cache
-invalidation, multi-file ingestion, aggregation, output formats, threat
-heuristics, findings export, CLI behavior, and TUI navigation. CI also runs
-formatting, pedantic Clippy, and a locked release build.
+The suite has 206 tests covering the parser, date range handling, cache
+invalidation, multi-file ingestion, sliding-window heuristics, custody
+metadata, integrity findings, aggregation, output formats, threat heuristics,
+findings export, CLI behavior, and TUI navigation. CI also runs formatting,
+pedantic Clippy, and a locked release build.
 
 ## License
 
