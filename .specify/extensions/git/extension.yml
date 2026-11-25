@@ -3,8 +3,8 @@ schema_version: "1.0"
 extension:
   id: git
   name: "Git Branching Workflow"
-  version: "1.0.9"
-  description: "Feature branch creation, numbering (sequential/timestamp), templating, validation, and Git remote detection"
+  version: "1.0.10"
+  description: "Feature branch creation, numbering (sequential/timestamp), templating, validation, Git remote detection, auto-commit, and pull request creation"
   author: spec-kit-core
   repository: https://github.com/github/spec-kit
   license: MIT
@@ -32,6 +32,9 @@ provides:
     - name: speckit.git.commit
       file: commands/speckit.git.commit.md
       description: "Auto-commit changes after a Spec Kit command completes"
+    - name: speckit.git.pr
+      file: commands/speckit.git.pr.md
+      description: "Commit remaining changes, push the branch, and open a GitHub pull request with REST fallback"
 
   config:
     - name: "git-config.yml"
@@ -90,38 +93,31 @@ hooks:
     description: "Auto-commit after constitution update"
   after_specify:
     command: speckit.git.commit
-    optional: true
-    prompt: "Commit specification changes?"
+    optional: false
     description: "Auto-commit after specification"
   after_clarify:
     command: speckit.git.commit
-    optional: true
-    prompt: "Commit clarification changes?"
+    optional: false
     description: "Auto-commit after spec clarification"
   after_plan:
     command: speckit.git.commit
-    optional: true
-    prompt: "Commit plan changes?"
+    optional: false
     description: "Auto-commit after implementation planning"
   after_tasks:
     command: speckit.git.commit
-    optional: true
-    prompt: "Commit task changes?"
+    optional: false
     description: "Auto-commit after task generation"
   after_implement:
     command: speckit.git.commit
-    optional: true
-    prompt: "Commit implementation changes?"
+    optional: false
     description: "Auto-commit after implementation"
   after_checklist:
     command: speckit.git.commit
-    optional: true
-    prompt: "Commit checklist changes?"
+    optional: false
     description: "Auto-commit after checklist generation"
   after_analyze:
     command: speckit.git.commit
-    optional: true
-    prompt: "Commit analysis results?"
+    optional: false
     description: "Auto-commit after analysis"
   after_taskstoissues:
     command: speckit.git.commit
