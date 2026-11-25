@@ -25,13 +25,13 @@ The standard cycle is:
 
 ```text
 constitution → specify → clarify (when needed) → plan
-→ checklist (when useful) → tasks → analyze → implement → converge
+→ checklist (when useful) → tasks → analyze → implement → converge → git.pr
 ```
 
 For small, well-understood changes, the shorter path is:
 
 ```text
-specify → plan → tasks → implement → converge
+specify → plan → tasks → implement → converge → git.pr
 ```
 
 Commands are invoked in OpenCode chat with dotted notation:
@@ -47,12 +47,23 @@ Commands are invoked in OpenCode chat with dotted notation:
 | `/speckit.analyze` | Check consistency across spec, plan, and tasks |
 | `/speckit.implement` | Execute the tasks |
 | `/speckit.converge` | Find gaps and append remaining tasks |
+| `/speckit.git.feature` | Create the numbered feature branch |
+| `/speckit.git.commit` | Commit a phase with a Conventional Commit message (also runs automatically) |
+| `/speckit.git.validate` | Validate the branch naming convention |
+| `/speckit.git.pr` | Commit any remaining work, push, and open a GitHub PR |
 
 Feature artifacts live under `specs/<NNN-feature>/` (for example,
 `specs/001-forensic-triage/`). The active feature is tracked in
 `.specify/feature.json`, not by the checked-out Git branch. The Spec Kit `git`
 extension is installed and creates `feat/NNN-slug` branches automatically; the
 active-feature pointer still comes from `.specify/feature.json`.
+
+The `git` extension commits each phase automatically (`after_specify`,
+`after_clarify`, `after_plan`, `after_tasks`, `after_implement`,
+`after_checklist`, and `after_analyze`) using the `conventional` commit style.
+`/speckit.git.pr` is the final step: it commits anything still dirty, pushes the
+branch, and opens the PR. It first tries `gh pr create` and falls back to the
+GitHub REST API if GitHub returns a transient GraphQL error.
 
 A typical feature directory contains:
 

@@ -328,6 +328,10 @@ change-level specifications, plans, and tasks live under `specs/`.
 
 - New behavior starts with `/speckit.specify` and follows the cycle documented
   in [`docs/spec-kit.md`](docs/spec-kit.md).
+- The Spec Kit git extension commits each phase automatically; finish a change
+  with `/speckit.git.pr`, which commits any remaining work, pushes the branch,
+  and opens the pull request (with a REST fallback if GitHub's GraphQL API
+  fails).
 - Product direction and scope are in [`docs/roadmap.md`](docs/roadmap.md).
 - Cross-cutting risks are in [`docs/risk-analysis.md`](docs/risk-analysis.md).
 
